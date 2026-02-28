@@ -22,32 +22,3 @@ README.md
 LICENSE
 CHANGELOG.md
 package-lock.json
-
-# node-mac-contacts build artifacts (only .node binary is needed)
-node_modules/node-mac-contacts/build/Makefile
-node_modules/node-mac-contacts/build/binding.Makefile
-node_modules/node-mac-contacts/build/config.gypi
-node_modules/node-mac-contacts/build/contacts.target.mk
-node_modules/node-mac-contacts/build/gyp-mac-tool
-node_modules/node-mac-contacts/build/Release/nothing.a
-node_modules/node-mac-contacts/build/Release/obj.target/
-node_modules/node-mac-contacts/build/Release/.deps/
-node_modules/node-mac-contacts/node-addon-api/
-node_modules/node-mac-contacts/test/
-node_modules/node-mac-contacts/.github/
-node_modules/node-mac-contacts/.husky/
-node_modules/node-mac-contacts/contacts.mm
-node_modules/node-mac-contacts/binding.gyp
-node_modules/node-mac-contacts/.prettierrc
-node_modules/node-mac-contacts/README.md
-
-# Zod — exclude source and extra dist variants
-node_modules/zod/src/
-node_modules/zod/v3/
-node_modules/zod/v4-mini/
-
-# MCP SDK — exclude CJS duplicate (project uses ESM)
-node_modules/@modelcontextprotocol/sdk/dist/cjs/
-
-# Type definitions (not needed at runtime)
-node_modules/@types/

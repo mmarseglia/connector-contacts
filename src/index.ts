@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+// Must be the very first import so handlers are active before any top-level
+// await in other modules (e.g. native addon loading in contacts-native.ts).
+import "./setup-handlers.js";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -24,7 +28,7 @@ server.tool(
   { readOnlyHint: true },
   async () => {
     try {
-      const status = native.getAuthStatus();
+      const status = await native.getAuthStatus();
       let hint = "";
       if (status === "Not Determined") {
         hint = "Permission has not been requested yet. The first contact operation will trigger the system prompt.";
@@ -49,7 +53,7 @@ server.tool(
   { readOnlyHint: true },
   async ({ query }) => {
     try {
-      const results = native.searchContacts(query);
+      const results = await native.searchContacts(query);
       return toolResult({ count: results.length, contacts: results });
     } catch (err) {
       return toolError(err);
@@ -64,7 +68,7 @@ server.tool(
   { readOnlyHint: true },
   async () => {
     try {
-      const results = native.getAllContacts();
+      const results = await native.getAllContacts();
       return toolResult({ count: results.length, contacts: results });
     } catch (err) {
       return toolError(err);
@@ -79,7 +83,7 @@ server.tool(
   { readOnlyHint: true },
   async ({ identifier }) => {
     try {
-      const contact = native.getContactDetails(identifier);
+      const contact = await native.getContactDetails(identifier);
       if (!contact) {
         return toolResult({ error: "Contact not found", identifier });
       }
@@ -109,10 +113,10 @@ server.tool(
   { readOnlyHint: false },
   async (input) => {
     try {
-      const success = native.createContact(input);
+      const success = await native.createContact(input);
       if (success) {
         // Attempt to find the newly created contact to return its identifier
-        const matches = native.searchContacts(input.firstName);
+        const matches = await native.searchContacts(input.firstName);
         const newContact = matches.find(
           (c) =>
             c.firstName === input.firstName &&
@@ -152,7 +156,7 @@ server.tool(
   async ({ identifier, ...fields }) => {
     try {
       // Fetch current contact to preserve fields not being updated
-      const current = native.getContactDetails(identifier);
+      const current = await native.getContactDetails(identifier);
       if (!current) {
         return toolResult({ success: false, error: "Contact not found", identifier });
       }
@@ -172,7 +176,7 @@ server.tool(
         urlAddresses: fields.urlAddresses,
       };
 
-      const success = native.updateContact(updatePayload);
+      const success = await native.updateContact(updatePayload);
       return toolResult({
         success,
         message: success ? "Contact updated" : "Failed to update contact",
@@ -190,7 +194,7 @@ server.tool(
   { readOnlyHint: false, destructiveHint: true },
   async ({ identifier }) => {
     try {
-      const success = native.deleteContact(identifier);
+      const success = await native.deleteContact(identifier);
       return toolResult({
         success,
         message: success ? "Contact deleted" : "Failed to delete contact",
@@ -332,5 +336,5 @@ async function main() {
 
 main().catch((error) => {
   console.error("Fatal error in connector-contacts:", error);
-  process.exit(1);
+  process.exitCode = 1;
 });

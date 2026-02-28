@@ -1,19 +1,49 @@
 import type { ContactBasic, ContactFull, ContactInput } from "./types.js";
 
-// Import the native addon with a safety net — if it was compiled against a
-// different Node.js ABI or the binary is missing, fail with a clear message
-// instead of silently crashing the MCP server process.
-let contacts: typeof import("node-mac-contacts").default;
-try {
-  contacts = (await import("node-mac-contacts")).default;
-} catch (err) {
-  console.error(
-    "connector-contacts: failed to load native module 'node-mac-contacts'. " +
-      "This usually means the addon was built for a different Node.js version. " +
-      "Run 'npm rebuild node-mac-contacts' to fix.",
-    err,
-  );
-  process.exit(1);
+// ---------------------------------------------------------------------------
+// Lazy-load the native addon.  We deliberately do NOT use a top-level await
+// here because:
+//   1. It delays the MCP server from starting (the host may time-out or
+//      restart the process while waiting).
+//   2. If the native addon crashes at the C/C++ level (e.g. ABI mismatch →
+//      SIGSEGV), a top-level await kills the process before the MCP transport
+//      even exists, so the error cannot be reported through the protocol.
+//
+// Instead, the addon is loaded lazily on the first tool call.  By that point
+// the server has already completed the MCP initialize handshake, and any load
+// failure is returned as a normal tool error.
+// ---------------------------------------------------------------------------
+
+type NativeContacts = typeof import("node-mac-contacts").default;
+
+let _loadPromise: Promise<NativeContacts> | null = null;
+
+/**
+ * Load (or return the cached) native module.
+ * The promise is created once and reused for all subsequent calls.
+ */
+function loadNative(): Promise<NativeContacts> {
+  if (!_loadPromise) {
+    _loadPromise = import("node-mac-contacts")
+      .then((mod) => {
+        console.error(
+          `connector-contacts: native module loaded (N-API ${process.versions.napi})`,
+        );
+        return mod.default;
+      })
+      .catch((err) => {
+        const msg =
+          "Failed to load native module 'node-mac-contacts'. " +
+          "This usually means the addon was built for a different Node.js version or architecture. " +
+          "Run 'npm rebuild node-mac-contacts' to fix. " +
+          String(err);
+        console.error("connector-contacts:", msg);
+        // Reset so a retry is possible (e.g. after npm rebuild)
+        _loadPromise = null;
+        throw new Error(msg);
+      });
+  }
+  return _loadPromise;
 }
 
 /**
@@ -35,11 +65,13 @@ const ALL_EXTRA_PROPERTIES = [
 // Auth
 // ---------------------------------------------------------------------------
 
-export function getAuthStatus(): string {
+export async function getAuthStatus(): Promise<string> {
+  const contacts = await loadNative();
   return contacts.getAuthStatus();
 }
 
 export async function requestAccess(): Promise<string> {
+  const contacts = await loadNative();
   return contacts.requestAccess();
 }
 
@@ -47,11 +79,13 @@ export async function requestAccess(): Promise<string> {
 // Read
 // ---------------------------------------------------------------------------
 
-export function getAllContacts(): ContactBasic[] {
+export async function getAllContacts(): Promise<ContactBasic[]> {
+  const contacts = await loadNative();
   return contacts.getAllContacts() as ContactBasic[];
 }
 
-export function searchContacts(query: string): ContactBasic[] {
+export async function searchContacts(query: string): Promise<ContactBasic[]> {
+  const contacts = await loadNative();
   const results = contacts.getContactsByName(query) as ContactBasic[];
   if (results.length > 0) return results;
 
@@ -85,7 +119,8 @@ export function searchContacts(query: string): ContactBasic[] {
  * identifier. This avoids loading every contact with extra properties.
  * Falls back to a full scan if the targeted search misses.
  */
-export function getContactDetails(identifier: string): ContactFull | null {
+export async function getContactDetails(identifier: string): Promise<ContactFull | null> {
+  const contacts = await loadNative();
   // First try a targeted approach: find the contact's name, then search with extras
   const basicAll = contacts.getAllContacts() as ContactBasic[];
   const basicMatch = basicAll.find((c) => c.identifier === identifier);
@@ -113,16 +148,19 @@ export function getContactDetails(identifier: string): ContactFull | null {
 // Write
 // ---------------------------------------------------------------------------
 
-export function createContact(input: ContactInput): boolean {
+export async function createContact(input: ContactInput): Promise<boolean> {
+  const contacts = await loadNative();
   return contacts.addNewContact(input);
 }
 
-export function updateContact(
+export async function updateContact(
   input: ContactInput & { identifier: string },
-): boolean {
+): Promise<boolean> {
+  const contacts = await loadNative();
   return contacts.updateContact(input);
 }
 
-export function deleteContact(identifier: string): boolean {
+export async function deleteContact(identifier: string): Promise<boolean> {
+  const contacts = await loadNative();
   return contacts.deleteContact({ identifier });
 }

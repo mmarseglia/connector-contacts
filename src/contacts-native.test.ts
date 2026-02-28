@@ -71,16 +71,16 @@ const CONTACT_ALICE_FULL: ContactFull = {
 // ---------------------------------------------------------------------------
 
 describe("getAuthStatus", () => {
-  it("returns the authorization status string from the native module", () => {
+  it("returns the authorization status string from the native module", async () => {
     vi.mocked(contacts.getAuthStatus).mockReturnValue("Authorized");
 
-    expect(getAuthStatus()).toBe("Authorized");
+    expect(await getAuthStatus()).toBe("Authorized");
   });
 
-  it("propagates other status values like Denied", () => {
+  it("propagates other status values like Denied", async () => {
     vi.mocked(contacts.getAuthStatus).mockReturnValue("Denied");
 
-    expect(getAuthStatus()).toBe("Denied");
+    expect(await getAuthStatus()).toBe("Denied");
   });
 });
 
@@ -93,128 +93,128 @@ describe("requestAccess", () => {
 });
 
 describe("getAllContacts", () => {
-  it("returns all contacts from the native module", () => {
+  it("returns all contacts from the native module", async () => {
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    expect(getAllContacts()).toEqual([CONTACT_ALICE, CONTACT_BOB]);
+    expect(await getAllContacts()).toEqual([CONTACT_ALICE, CONTACT_BOB]);
   });
 
-  it("returns an empty array when no contacts exist", () => {
+  it("returns an empty array when no contacts exist", async () => {
     vi.mocked(contacts.getAllContacts).mockReturnValue([]);
 
-    expect(getAllContacts()).toEqual([]);
+    expect(await getAllContacts()).toEqual([]);
   });
 });
 
 describe("searchContacts", () => {
-  it("passes the query to getContactsByName and returns results", () => {
+  it("passes the query to getContactsByName and returns results", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([CONTACT_ALICE]);
 
-    const results = searchContacts("Alice");
+    const results = await searchContacts("Alice");
 
     expect(results).toEqual([CONTACT_ALICE]);
     expect(contacts.getContactsByName).toHaveBeenCalledWith("Alice");
   });
 
-  it("falls back to manual search when getContactsByName returns empty", () => {
+  it("falls back to manual search when getContactsByName returns empty", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("Alice Smith");
+    const results = await searchContacts("Alice Smith");
 
     expect(results).toEqual([CONTACT_ALICE]);
     expect(contacts.getAllContacts).toHaveBeenCalled();
   });
 
-  it("fallback matches on first name alone", () => {
+  it("fallback matches on first name alone", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("Alice");
+    const results = await searchContacts("Alice");
 
     expect(results).toEqual([CONTACT_ALICE]);
   });
 
-  it("fallback matches on last name alone", () => {
+  it("fallback matches on last name alone", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("Smith");
+    const results = await searchContacts("Smith");
 
     expect(results).toEqual([CONTACT_ALICE]);
   });
 
-  it("fallback matches on nickname", () => {
+  it("fallback matches on nickname", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("Bobby");
+    const results = await searchContacts("Bobby");
 
     expect(results).toEqual([CONTACT_BOB]);
   });
 
-  it("fallback matches on email address", () => {
+  it("fallback matches on email address", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("alice@example.com");
+    const results = await searchContacts("alice@example.com");
 
     expect(results).toEqual([CONTACT_ALICE]);
   });
 
-  it("fallback is case-insensitive", () => {
+  it("fallback is case-insensitive", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("alice smith");
+    const results = await searchContacts("alice smith");
 
     expect(results).toEqual([CONTACT_ALICE]);
   });
 
-  it("does not trigger fallback when native API returns results", () => {
+  it("does not trigger fallback when native API returns results", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([CONTACT_ALICE]);
 
-    searchContacts("Alice");
+    await searchContacts("Alice");
 
     expect(contacts.getAllContacts).not.toHaveBeenCalled();
   });
 
-  it("returns empty array when neither native nor fallback finds matches", () => {
+  it("returns empty array when neither native nor fallback finds matches", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([]);
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
-    const results = searchContacts("Zara");
+    const results = await searchContacts("Zara");
 
     expect(results).toEqual([]);
   });
 });
 
 describe("getContactDetails", () => {
-  it("returns full contact via targeted name search (happy path)", () => {
+  it("returns full contact via targeted name search (happy path)", async () => {
     // First call: getAllContacts() with no args → basic list
     vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
     // Targeted search by first name with extra properties
@@ -222,7 +222,7 @@ describe("getContactDetails", () => {
       CONTACT_ALICE_FULL,
     ]);
 
-    const result = getContactDetails("id-alice-001");
+    const result = await getContactDetails("id-alice-001");
 
     expect(result).toEqual(CONTACT_ALICE_FULL);
     expect(contacts.getContactsByName).toHaveBeenCalledWith(
@@ -231,7 +231,7 @@ describe("getContactDetails", () => {
     );
   });
 
-  it("falls back to full scan when targeted search misses", () => {
+  it("falls back to full scan when targeted search misses", async () => {
     // First call: basic lookup finds Alice
     vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
     // Targeted search returns empty (miss)
@@ -241,14 +241,14 @@ describe("getContactDetails", () => {
       CONTACT_ALICE_FULL,
     ]);
 
-    const result = getContactDetails("id-alice-001");
+    const result = await getContactDetails("id-alice-001");
 
     expect(result).toEqual(CONTACT_ALICE_FULL);
     // getAllContacts should have been called twice (basic + fallback with extras)
     expect(contacts.getAllContacts).toHaveBeenCalledTimes(2);
   });
 
-  it("falls back to full scan when contact has no name", () => {
+  it("falls back to full scan when contact has no name", async () => {
     const noNameBasic: ContactBasic = {
       ...CONTACT_ALICE,
       identifier: "id-noname",
@@ -267,14 +267,14 @@ describe("getContactDetails", () => {
     // Fallback full scan (searchName is empty, so getContactsByName is skipped)
     vi.mocked(contacts.getAllContacts).mockReturnValueOnce([noNameFull]);
 
-    const result = getContactDetails("id-noname");
+    const result = await getContactDetails("id-noname");
 
     expect(result).toEqual(noNameFull);
     // getContactsByName should NOT be called because searchName is ""
     expect(contacts.getContactsByName).not.toHaveBeenCalled();
   });
 
-  it("returns null when identifier is not found anywhere", () => {
+  it("returns null when identifier is not found anywhere", async () => {
     vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
     vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
       CONTACT_ALICE_FULL,
@@ -284,37 +284,37 @@ describe("getContactDetails", () => {
       CONTACT_ALICE_FULL,
     ]);
 
-    const result = getContactDetails("nonexistent-id");
+    const result = await getContactDetails("nonexistent-id");
 
     expect(result).toBeNull();
   });
 });
 
 describe("createContact", () => {
-  it("passes the input to addNewContact and returns the result", () => {
+  it("passes the input to addNewContact and returns the result", async () => {
     vi.mocked(contacts.addNewContact).mockReturnValue(true);
 
     const input = { firstName: "Alice", lastName: "Smith" };
-    expect(createContact(input)).toBe(true);
+    expect(await createContact(input)).toBe(true);
     expect(contacts.addNewContact).toHaveBeenCalledWith(input);
   });
 });
 
 describe("updateContact", () => {
-  it("passes the input with identifier to updateContact", () => {
+  it("passes the input with identifier to updateContact", async () => {
     vi.mocked(contacts.updateContact).mockReturnValue(true);
 
     const input = { identifier: "id-1", firstName: "Alice" };
-    expect(updateContact(input)).toBe(true);
+    expect(await updateContact(input)).toBe(true);
     expect(contacts.updateContact).toHaveBeenCalledWith(input);
   });
 });
 
 describe("deleteContact", () => {
-  it("wraps identifier in an object and passes to deleteContact", () => {
+  it("wraps identifier in an object and passes to deleteContact", async () => {
     vi.mocked(contacts.deleteContact).mockReturnValue(true);
 
-    expect(deleteContact("id-1")).toBe(true);
+    expect(await deleteContact("id-1")).toBe(true);
     expect(contacts.deleteContact).toHaveBeenCalledWith({ identifier: "id-1" });
   });
 });
