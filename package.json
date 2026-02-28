@@ -1,0 +1,33 @@
+{
+  "name": "connector-contacts",
+  "version": "1.0.0",
+  "description": "MCP server for macOS Contacts — full read/write access to contacts, groups, and vCard export",
+  "type": "module",
+  "bin": {
+    "connector-contacts": "./server/index.js"
+  },
+  "scripts": {
+    "clean": "rm -rf server; rm -rf connector-contacts.mcpb",
+    "build": "tsc && chmod 755 server/index.js",
+    "rebuild": "npm run clean && npm run build",
+    "pack": "npm run build && mcpb pack .",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "node-mac-contacts": "^1.7.2",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "node-mac-contacts": {
+      "node-addon-api": "^8.0.0"
+    }
+  }
+}

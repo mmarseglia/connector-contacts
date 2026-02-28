@@ -1,0 +1,37 @@
+name: Build MCPB Bundle
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm test
+      - run: npm install -g @anthropic-ai/mcpb
+      - run: npm run pack
+
+      - name: Move latest tag
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: Built from ${{ github.sha }}
+          files: connector-contacts.mcpb
+          prerelease: true
+          make_latest: false
