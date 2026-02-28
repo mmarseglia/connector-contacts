@@ -28,12 +28,17 @@ server.tool(
   { readOnlyHint: true },
   async () => {
     try {
-      const status = await native.getAuthStatus();
+      let status = await native.getAuthStatus();
       let hint = "";
       if (status === "Not Determined") {
-        hint = "Permission has not been requested yet. The first contact operation will trigger the system prompt.";
-      } else if (status === "Denied") {
-        hint = "Permission was denied. The user needs to enable Contacts access for Claude Desktop in System Settings > Privacy & Security > Contacts.";
+        status = await native.requestAccess();
+        hint = status === "Authorized"
+          ? "Permission was just granted. Contacts are now accessible."
+          : `Permission prompt was shown but access was not granted (status: ${status}). Please enable Contacts access in System Settings > Privacy & Security > Contacts.`;
+      } else if (status === "Denied" || status === "Restricted") {
+        hint = "Permission was denied. The user needs to enable Contacts access in System Settings > Privacy & Security > Contacts.";
+      } else if (status === "Limited") {
+        hint = "Limited access granted (macOS 15+). Only contacts the user explicitly selected are visible. Grant full access in System Settings > Privacy & Security > Contacts.";
       }
       return toolResult({ status, hint });
     } catch (err) {

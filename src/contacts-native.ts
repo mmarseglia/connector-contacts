@@ -75,16 +75,49 @@ export async function requestAccess(): Promise<string> {
   return contacts.requestAccess();
 }
 
+/**
+ * Ensure the process has Contacts access before performing any operation.
+ *
+ * - "Not Determined" → calls requestAccess() to trigger the macOS permission
+ *   dialog, then checks the result.
+ * - "Authorized" → no-op (fast path).
+ * - "Denied" / "Restricted" → throws with actionable instructions.
+ * - "Limited" (macOS 15+) → proceeds (results may be incomplete).
+ */
+export async function ensureAccess(): Promise<void> {
+  const status = await getAuthStatus();
+
+  if (status === "Authorized" || status === "Limited") return;
+
+  if (status === "Not Determined") {
+    const result = await requestAccess();
+    if (result === "Authorized" || result === "Limited") return;
+    throw new Error(
+      `Contacts access was not granted (status after prompt: ${result}). ` +
+        "Please enable Contacts access in System Settings > Privacy & Security > Contacts.",
+    );
+  }
+
+  // Denied, Restricted, or any unexpected status
+  throw new Error(
+    `Contacts access is currently "${status}". ` +
+      "Please enable Contacts access in System Settings > Privacy & Security > Contacts. " +
+      "You may need to run: tccutil reset AddressBook <bundle-id>",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Read
 // ---------------------------------------------------------------------------
 
 export async function getAllContacts(): Promise<ContactBasic[]> {
+  await ensureAccess();
   const contacts = await loadNative();
   return contacts.getAllContacts() as ContactBasic[];
 }
 
 export async function searchContacts(query: string): Promise<ContactBasic[]> {
+  await ensureAccess();
   const contacts = await loadNative();
   const results = contacts.getContactsByName(query) as ContactBasic[];
   if (results.length > 0) return results;
@@ -120,6 +153,7 @@ export async function searchContacts(query: string): Promise<ContactBasic[]> {
  * Falls back to a full scan if the targeted search misses.
  */
 export async function getContactDetails(identifier: string): Promise<ContactFull | null> {
+  await ensureAccess();
   const contacts = await loadNative();
   // First try a targeted approach: find the contact's name, then search with extras
   const basicAll = contacts.getAllContacts() as ContactBasic[];
@@ -149,6 +183,7 @@ export async function getContactDetails(identifier: string): Promise<ContactFull
 // ---------------------------------------------------------------------------
 
 export async function createContact(input: ContactInput): Promise<boolean> {
+  await ensureAccess();
   const contacts = await loadNative();
   return contacts.addNewContact(input);
 }
@@ -156,11 +191,13 @@ export async function createContact(input: ContactInput): Promise<boolean> {
 export async function updateContact(
   input: ContactInput & { identifier: string },
 ): Promise<boolean> {
+  await ensureAccess();
   const contacts = await loadNative();
   return contacts.updateContact(input);
 }
 
 export async function deleteContact(identifier: string): Promise<boolean> {
+  await ensureAccess();
   const contacts = await loadNative();
   return contacts.deleteContact({ identifier });
 }

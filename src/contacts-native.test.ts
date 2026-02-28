@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // Mock the native module before any imports that depend on it.
 // Vitest hoists vi.mock() above all imports automatically.
@@ -20,6 +20,7 @@ import type { ContactBasic, ContactFull } from "./types.js";
 import {
   getAuthStatus,
   requestAccess,
+  ensureAccess,
   getAllContacts,
   searchContacts,
   getContactDetails,
@@ -69,6 +70,62 @@ const CONTACT_ALICE_FULL: ContactFull = {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// Most operations call ensureAccess() internally, which checks getAuthStatus.
+// Default to "Authorized" so existing tests pass without extra mocking.
+beforeEach(() => {
+  vi.mocked(contacts.getAuthStatus).mockReturnValue("Authorized");
+});
+
+describe("ensureAccess", () => {
+  it("resolves immediately when status is Authorized", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Authorized");
+
+    await expect(ensureAccess()).resolves.toBeUndefined();
+    expect(contacts.requestAccess).not.toHaveBeenCalled();
+  });
+
+  it("resolves immediately when status is Limited", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Limited");
+
+    await expect(ensureAccess()).resolves.toBeUndefined();
+    expect(contacts.requestAccess).not.toHaveBeenCalled();
+  });
+
+  it("calls requestAccess when status is Not Determined and resolves on Authorized", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Not Determined");
+    vi.mocked(contacts.requestAccess).mockResolvedValue("Authorized");
+
+    await expect(ensureAccess()).resolves.toBeUndefined();
+    expect(contacts.requestAccess).toHaveBeenCalled();
+  });
+
+  it("throws when status is Not Determined and user denies access", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Not Determined");
+    vi.mocked(contacts.requestAccess).mockResolvedValue("Denied");
+
+    await expect(ensureAccess()).rejects.toThrow(
+      /Contacts access was not granted/,
+    );
+  });
+
+  it("throws when status is Denied", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Denied");
+
+    await expect(ensureAccess()).rejects.toThrow(
+      /Contacts access is currently "Denied"/,
+    );
+    expect(contacts.requestAccess).not.toHaveBeenCalled();
+  });
+
+  it("throws when status is Restricted", async () => {
+    vi.mocked(contacts.getAuthStatus).mockReturnValue("Restricted");
+
+    await expect(ensureAccess()).rejects.toThrow(
+      /Contacts access is currently "Restricted"/,
+    );
+  });
+});
 
 describe("getAuthStatus", () => {
   it("returns the authorization status string from the native module", async () => {
