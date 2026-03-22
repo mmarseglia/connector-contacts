@@ -14,7 +14,7 @@ import { toolResult, toolError } from "./utils.js";
 
 const server = new McpServer({
   name: "connector-contacts",
-  version: "1.1.0",
+  version: "1.2.0",
 });
 
 // ===========================================================================

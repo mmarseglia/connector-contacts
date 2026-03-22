@@ -366,6 +366,41 @@ describe("updateContact", () => {
     expect(await updateContact(input)).toBe(true);
     expect(contacts.updateContact).toHaveBeenCalledWith(input);
   });
+
+  it("returns false when the native module returns false", async () => {
+    vi.mocked(contacts.updateContact).mockReturnValue(false);
+
+    const input = { identifier: "id-1", firstName: "Alice" };
+    expect(await updateContact(input)).toBe(false);
+  });
+});
+
+describe("getContactDetails includes urlAddresses", () => {
+  it("returns urlAddresses when present in the full contact", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
+      CONTACT_ALICE_FULL,
+    ]);
+
+    const result = await getContactDetails("id-alice-001");
+
+    expect(result).not.toBeNull();
+    expect(result!.urlAddresses).toEqual(["https://alice.dev"]);
+  });
+
+  it("requests urlAddresses as an extra property", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
+      CONTACT_ALICE_FULL,
+    ]);
+
+    await getContactDetails("id-alice-001");
+
+    expect(contacts.getContactsByName).toHaveBeenCalledWith(
+      "Alice",
+      expect.arrayContaining(["urlAddresses"]),
+    );
+  });
 });
 
 describe("deleteContact", () => {
