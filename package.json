@@ -1,16 +1,16 @@
 {
   "name": "connector-contacts",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MCP server for macOS Contacts — full read/write access to contacts, groups, and vCard export",
   "type": "module",
   "bin": {
     "connector-contacts": "./server/index.js"
   },
   "scripts": {
-    "clean": "rm -rf server; rm -rf connector-contacts.mcpb",
+    "clean": "rm -rf server; rm -rf connector-contacts*.mcpb",
     "build": "tsc && chmod 755 server/index.js",
     "rebuild": "npm run clean && npm run build",
-    "pack": "npm run build && npm ci --omit=dev && mcpb pack . && npm ci",
+    "pack": "npm run build && npm ci --omit=dev && mcpb pack . && mv connector-contacts.mcpb connector-contacts-$npm_package_version.mcpb && npm ci",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest"

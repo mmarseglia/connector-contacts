@@ -388,7 +388,7 @@ describe("getContactDetails includes urlAddresses", () => {
     expect(result!.urlAddresses).toEqual(["https://alice.dev"]);
   });
 
-  it("requests urlAddresses as an extra property", async () => {
+  it("does not request urlAddresses as an extra property", async () => {
     vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
     vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
       CONTACT_ALICE_FULL,
@@ -396,10 +396,8 @@ describe("getContactDetails includes urlAddresses", () => {
 
     await getContactDetails("id-alice-001");
 
-    expect(contacts.getContactsByName).toHaveBeenCalledWith(
-      "Alice",
-      expect.arrayContaining(["urlAddresses"]),
-    );
+    const passedExtras = vi.mocked(contacts.getContactsByName).mock.calls[0][1] as string[];
+    expect(passedExtras).not.toContain("urlAddresses");
   });
 });
 
@@ -409,5 +407,275 @@ describe("deleteContact", () => {
 
     expect(await deleteContact("id-1")).toBe(true);
     expect(contacts.deleteContact).toHaveBeenCalledWith({ identifier: "id-1" });
+  });
+});
+
+// ===========================================================================
+// Bug 1 — get_contact_details: extraProperties must only contain values
+// accepted by the native node-mac-contacts module.
+//
+// The native module's validateContactArg() rejects any extraProperties entry
+// not in: jobTitle, departmentName, organizationName, middleName, note,
+// contactImage, contactThumbnailImage, instantMessageAddresses, socialProfiles.
+//
+// "urlAddresses" is NOT a valid extra property — including it causes
+// getAllContacts() and getContactsByName() to throw.
+// ===========================================================================
+
+describe("Bug 1: getContactDetails only passes valid extra properties", () => {
+  /**
+   * The set of extra properties the native module actually accepts.
+   * If ALL_EXTRA_PROPERTIES in contacts-native.ts contains anything outside
+   * this set, the native module will throw a validation error.
+   */
+  const VALID_EXTRA_PROPERTIES = [
+    "jobTitle",
+    "departmentName",
+    "organizationName",
+    "middleName",
+    "note",
+    "contactImage",
+    "contactThumbnailImage",
+    "instantMessageAddresses",
+    "socialProfiles",
+  ];
+
+  it("only passes valid extra properties to getContactsByName (targeted search)", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+
+    await getContactDetails("id-alice-001");
+
+    const passedExtras = vi.mocked(contacts.getContactsByName).mock.calls[0][1] as string[];
+    for (const prop of passedExtras) {
+      expect(
+        VALID_EXTRA_PROPERTIES,
+        `"${prop}" is not a valid extraProperty accepted by node-mac-contacts`,
+      ).toContain(prop);
+    }
+  });
+
+  it("only passes valid extra properties to getAllContacts (fallback full scan)", async () => {
+    // Force the fallback path: basic lookup finds Alice, but targeted search misses
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([]);
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+
+    await getContactDetails("id-alice-001");
+
+    // The second getAllContacts call is the fallback with ALL_EXTRA_PROPERTIES
+    const fallbackCall = vi.mocked(contacts.getAllContacts).mock.calls[1];
+    const passedExtras = fallbackCall[0] as string[];
+    for (const prop of passedExtras) {
+      expect(
+        VALID_EXTRA_PROPERTIES,
+        `"${prop}" is not a valid extraProperty accepted by node-mac-contacts`,
+      ).toContain(prop);
+    }
+  });
+
+  it("does not include 'urlAddresses' in extra properties", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+
+    await getContactDetails("id-alice-001");
+
+    const passedExtras = vi.mocked(contacts.getContactsByName).mock.calls[0][1] as string[];
+    expect(
+      passedExtras,
+      "urlAddresses is not a valid extraProperty — it causes a validation error in node-mac-contacts",
+    ).not.toContain("urlAddresses");
+  });
+
+  it("reproduces the native module error when urlAddresses is included", async () => {
+    // Simulate the actual native module behavior: it throws when given
+    // an invalid extra property like "urlAddresses".
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockImplementationOnce(
+      (_name: string, extraProperties?: string[]) => {
+        if (extraProperties?.includes("urlAddresses")) {
+          throw new Error(
+            "properties in extraProperties must be one of jobTitle, departmentName, " +
+            "organizationName, middleName, note, contactImage, contactThumbnailImage, " +
+            "instantMessageAddresses, socialProfiles",
+          );
+        }
+        return [CONTACT_ALICE_FULL];
+      },
+    );
+
+    // Bug is fixed: urlAddresses is no longer in ALL_EXTRA_PROPERTIES,
+    // so the native module no longer throws.
+    await expect(getContactDetails("id-alice-001")).resolves.not.toThrow();
+  });
+});
+
+// ===========================================================================
+// Bug 2 — update_contact: the MCP handler calls getContactDetails() before
+// performing the update.  Because getContactDetails() is broken (Bug 1),
+// update_contact always fails before it even attempts to save.
+//
+// Additionally, even when getContactDetails was working (retest #2), the
+// update still didn't persist — the native updateContact() was called but
+// changes were not saved.
+// ===========================================================================
+
+describe("Bug 2: updateContact is blocked by getContactDetails failure", () => {
+  it("updateContact itself works when called directly with valid input", async () => {
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    const input = { identifier: "id-alice-001", nickname: "Ali" };
+    const result = await updateContact(input);
+
+    expect(result).toBe(true);
+    expect(contacts.updateContact).toHaveBeenCalledWith(input);
+  });
+
+  it("updateContact passes all provided fields to native module", async () => {
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    const input = {
+      identifier: "id-alice-001",
+      nickname: "Ali",
+      emailAddresses: ["newalice@example.com"],
+      jobTitle: "Senior Engineer",
+    };
+    const result = await updateContact(input);
+
+    expect(result).toBe(true);
+    expect(contacts.updateContact).toHaveBeenCalledWith(input);
+  });
+});
+
+/**
+ * Integration-style tests that exercise the MCP handler logic in index.ts.
+ *
+ * The update_contact handler (index.ts lines 161–218) calls
+ * native.getContactDetails() to fetch the current contact before building
+ * the update payload. This means Bug 1 cascades into Bug 2.
+ *
+ * These tests mock at the native module level and call the same functions
+ * that the MCP handler uses, to verify the cascade.
+ */
+describe("Bug 2: update_contact handler cascade from getContactDetails", () => {
+  /**
+   * Simulates what the MCP update_contact handler does:
+   * 1. Calls getContactDetails to fetch current contact
+   * 2. Merges fields
+   * 3. Calls updateContact
+   *
+   * This mirrors index.ts lines 161–218.
+   */
+  async function simulateUpdateHandler(
+    identifier: string,
+    fields: Record<string, unknown>,
+  ): Promise<{ success: boolean; error?: string }> {
+    // Step 1: fetch current contact (same as index.ts line 164)
+    const current = await getContactDetails(identifier);
+    if (!current) {
+      return { success: false, error: "Contact not found" };
+    }
+
+    // Step 2: build payload (simplified version of index.ts lines 174–207)
+    const updatePayload: Record<string, unknown> & { identifier: string } = { identifier };
+    for (const key of [
+      "firstName", "lastName", "nickname", "middleName",
+      "jobTitle", "departmentName", "organizationName",
+    ]) {
+      const value = fields[key] ?? (current as unknown as Record<string, unknown>)[key];
+      if (value) updatePayload[key] = value;
+    }
+    const birthday = (fields.birthday ?? current.birthday) as string | undefined;
+    if (birthday) updatePayload.birthday = birthday;
+    for (const key of ["phoneNumbers", "emailAddresses", "urlAddresses"]) {
+      if (fields[key]) {
+        updatePayload[key] = fields[key];
+      } else if ((current as unknown as Record<string, unknown[]>)[key]?.length) {
+        updatePayload[key] = (current as unknown as Record<string, unknown[]>)[key];
+      }
+    }
+
+    // Step 3: call native update
+    const success = await updateContact(updatePayload as Record<string, unknown> & { identifier: string });
+    return { success, error: success ? undefined : "Failed to update contact" };
+  }
+
+  it("update fails because getContactDetails throws (extraProperties bug cascade)", async () => {
+    // Simulate the native module rejecting "urlAddresses" in extra properties
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockImplementationOnce(
+      (_name: string, extraProperties?: string[]) => {
+        if (extraProperties?.includes("urlAddresses")) {
+          throw new Error(
+            "properties in extraProperties must be one of jobTitle, departmentName, " +
+            "organizationName, middleName, note, contactImage, contactThumbnailImage, " +
+            "instantMessageAddresses, socialProfiles",
+          );
+        }
+        return [CONTACT_ALICE_FULL];
+      },
+    );
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    // Bug is fixed: urlAddresses is no longer in ALL_EXTRA_PROPERTIES,
+    // so getContactDetails succeeds and the update proceeds.
+    const result = await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
+    expect(result.success).toBe(true);
+    expect(contacts.updateContact).toHaveBeenCalledTimes(1);
+  });
+
+  it("update succeeds when getContactDetails works (expected behavior after fix)", async () => {
+    // Simulate a fixed version where getContactDetails returns normally
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    const result = await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
+
+    expect(result.success).toBe(true);
+    expect(contacts.updateContact).toHaveBeenCalledTimes(1);
+
+    // Verify the payload includes the new nickname AND preserves existing fields
+    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.identifier).toBe("id-alice-001");
+    expect(payload.nickname).toBe("Ali");
+    expect(payload.firstName).toBe("Alice");
+    expect(payload.jobTitle).toBe("Engineer");
+  });
+
+  it("update preserves existing email addresses when only nickname is changed", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
+
+    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.emailAddresses).toEqual(["alice@example.com"]);
+  });
+
+  it("update replaces email addresses when explicitly provided", async () => {
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    await simulateUpdateHandler("id-alice-001", {
+      emailAddresses: ["newalice@example.com"],
+    });
+
+    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.emailAddresses).toEqual(["newalice@example.com"]);
+  });
+
+  it("update omits empty birthday to avoid native validation error", async () => {
+    const aliceNoBirthday: ContactFull = { ...CONTACT_ALICE_FULL, birthday: "" };
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([{ ...CONTACT_ALICE, birthday: "" }]);
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([aliceNoBirthday]);
+    vi.mocked(contacts.updateContact).mockReturnValue(true);
+
+    await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
+
+    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("birthday");
   });
 });

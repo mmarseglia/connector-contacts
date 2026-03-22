@@ -56,7 +56,6 @@ const ALL_EXTRA_PROPERTIES = [
   "organizationName",
   "middleName",
   "note",
-  "urlAddresses",
   "socialProfiles",
   "instantMessageAddresses",
 ];
