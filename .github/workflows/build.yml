@@ -32,6 +32,6 @@ jobs:
           tag_name: latest
           name: Latest Build
           body: Built from ${{ github.sha }}
-          files: connector-contacts.mcpb
+          files: connector-contacts-*.mcpb
           prerelease: true
           make_latest: false
