@@ -150,13 +150,14 @@ describe("requestAccess", () => {
 });
 
 describe("getAllContacts", () => {
-  it("returns all contacts from the native module", async () => {
+  it("returns all contacts from the native module with search extras", async () => {
     vi.mocked(contacts.getAllContacts).mockReturnValue([
       CONTACT_ALICE,
       CONTACT_BOB,
     ]);
 
     expect(await getAllContacts()).toEqual([CONTACT_ALICE, CONTACT_BOB]);
+    expect(contacts.getAllContacts).toHaveBeenCalledWith(["jobTitle", "organizationName"]);
   });
 
   it("returns an empty array when no contacts exist", async () => {
@@ -167,13 +168,13 @@ describe("getAllContacts", () => {
 });
 
 describe("searchContacts", () => {
-  it("passes the query to getContactsByName and returns results", async () => {
+  it("passes the query to getContactsByName with search extras and returns results", async () => {
     vi.mocked(contacts.getContactsByName).mockReturnValue([CONTACT_ALICE]);
 
     const results = await searchContacts("Alice");
 
     expect(results).toEqual([CONTACT_ALICE]);
-    expect(contacts.getContactsByName).toHaveBeenCalledWith("Alice");
+    expect(contacts.getContactsByName).toHaveBeenCalledWith("Alice", ["jobTitle", "organizationName"]);
   });
 
   it("falls back to manual search when getContactsByName returns empty", async () => {
@@ -186,7 +187,7 @@ describe("searchContacts", () => {
     const results = await searchContacts("Alice Smith");
 
     expect(results).toEqual([CONTACT_ALICE]);
-    expect(contacts.getAllContacts).toHaveBeenCalled();
+    expect(contacts.getAllContacts).toHaveBeenCalledWith(["jobTitle", "organizationName"]);
   });
 
   it("fallback matches on first name alone", async () => {

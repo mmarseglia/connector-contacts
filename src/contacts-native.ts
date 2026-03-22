@@ -56,7 +56,6 @@ const ALL_EXTRA_PROPERTIES = [
   "organizationName",
   "middleName",
   "note",
-  "urlAddresses",
   "socialProfiles",
   "instantMessageAddresses",
 ];
@@ -110,16 +109,23 @@ export async function ensureAccess(): Promise<void> {
 // Read
 // ---------------------------------------------------------------------------
 
+/**
+ * Extra properties included in basic contact listings so that search results
+ * and get_all_contacts return jobTitle and organizationName for easier
+ * disambiguation without a separate get_contact_details call.
+ */
+const SEARCH_EXTRA_PROPERTIES = ["jobTitle", "organizationName"];
+
 export async function getAllContacts(): Promise<ContactBasic[]> {
   await ensureAccess();
   const contacts = await loadNative();
-  return contacts.getAllContacts() as ContactBasic[];
+  return contacts.getAllContacts(SEARCH_EXTRA_PROPERTIES) as ContactBasic[];
 }
 
 export async function searchContacts(query: string): Promise<ContactBasic[]> {
   await ensureAccess();
   const contacts = await loadNative();
-  const results = contacts.getContactsByName(query) as ContactBasic[];
+  const results = contacts.getContactsByName(query, SEARCH_EXTRA_PROPERTIES) as ContactBasic[];
   if (results.length > 0) return results;
 
   // Fallback: Apple's CNContact predicateForContactsMatchingName: can miss
@@ -129,7 +135,7 @@ export async function searchContacts(query: string): Promise<ContactBasic[]> {
   const q = query.toLowerCase().trim();
   if (!q) return results;
 
-  return (contacts.getAllContacts() as ContactBasic[]).filter((c) => {
+  return (contacts.getAllContacts(SEARCH_EXTRA_PROPERTIES) as ContactBasic[]).filter((c) => {
     const first = (c.firstName ?? "").toLowerCase();
     const last = (c.lastName ?? "").toLowerCase();
     const full = `${first} ${last}`.trim();
@@ -189,11 +195,11 @@ export async function createContact(input: ContactInput): Promise<boolean> {
 }
 
 export async function updateContact(
-  input: ContactInput & { identifier: string },
+  input: Record<string, unknown> & { identifier: string },
 ): Promise<boolean> {
   await ensureAccess();
   const contacts = await loadNative();
-  return contacts.updateContact(input);
+  return contacts.updateContact(input as unknown as Parameters<typeof contacts.updateContact>[0]);
 }
 
 export async function deleteContact(identifier: string): Promise<boolean> {

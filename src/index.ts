@@ -14,7 +14,7 @@ import { toolResult, toolError } from "./utils.js";
 
 const server = new McpServer({
   name: "connector-contacts",
-  version: "1.0.0",
+  version: "1.1.0",
 });
 
 // ===========================================================================
@@ -166,20 +166,45 @@ server.tool(
         return toolResult({ success: false, error: "Contact not found", identifier });
       }
 
-      const updatePayload = {
-        identifier,
-        firstName: fields.firstName ?? current.firstName,
-        lastName: fields.lastName ?? current.lastName,
-        nickname: fields.nickname ?? current.nickname,
-        middleName: fields.middleName ?? current.middleName,
-        jobTitle: fields.jobTitle ?? current.jobTitle,
-        departmentName: fields.departmentName ?? current.departmentName,
-        organizationName: fields.organizationName ?? current.organizationName,
-        birthday: fields.birthday ?? current.birthday,
-        phoneNumbers: fields.phoneNumbers,
-        emailAddresses: fields.emailAddresses,
-        urlAddresses: fields.urlAddresses,
-      };
+      // Build the payload dynamically, only including fields that have
+      // actual values.  The native module's validateContactArg() checks
+      // hasOwnProperty — including a key set to undefined or an empty
+      // birthday string triggers validation errors for fields that
+      // aren't being changed.  By omitting them we avoid the cascade.
+      const updatePayload: Record<string, unknown> & { identifier: string } = { identifier };
+
+      // Scalar string fields: include if user provided OR current has a value
+      for (const key of [
+        "firstName", "lastName", "nickname", "middleName",
+        "jobTitle", "departmentName", "organizationName",
+      ] as const) {
+        const value = fields[key] ?? (current as unknown as Record<string, unknown>)[key];
+        if (value) updatePayload[key] = value;
+      }
+
+      // Birthday: only include if the resolved value is a non-empty string
+      const birthday = fields.birthday ?? current.birthday;
+      if (birthday) updatePayload.birthday = birthday;
+
+      // Array fields: include only if the caller explicitly provided them
+      // (to replace) or the current contact already has entries (to preserve).
+      if (fields.phoneNumbers) {
+        updatePayload.phoneNumbers = fields.phoneNumbers;
+      } else if (current.phoneNumbers?.length) {
+        updatePayload.phoneNumbers = current.phoneNumbers;
+      }
+
+      if (fields.emailAddresses) {
+        updatePayload.emailAddresses = fields.emailAddresses;
+      } else if (current.emailAddresses?.length) {
+        updatePayload.emailAddresses = current.emailAddresses;
+      }
+
+      if (fields.urlAddresses) {
+        updatePayload.urlAddresses = fields.urlAddresses;
+      } else if (current.urlAddresses?.length) {
+        updatePayload.urlAddresses = current.urlAddresses;
+      }
 
       const success = await native.updateContact(updatePayload);
       return toolResult({

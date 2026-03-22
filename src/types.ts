@@ -10,6 +10,10 @@ export interface ContactBasic {
   phoneNumbers: string[];
   emailAddresses: string[];
   postalAddresses: string[];
+  /** Included when search/list requests fetch extra properties. */
+  jobTitle?: string;
+  /** Included when search/list requests fetch extra properties. */
+  organizationName?: string;
 }
 
 /**
