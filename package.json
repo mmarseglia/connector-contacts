@@ -1,6 +1,6 @@
 {
   "name": "connector-contacts",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "MCP server for macOS Contacts — full read/write access to contacts, groups, and vCard export",
   "type": "module",
   "bin": {
