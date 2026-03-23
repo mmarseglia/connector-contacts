@@ -214,4 +214,20 @@ describe("runAppleScript error handling", () => {
 
     expect(() => listGroups()).toThrow("AppleScript error: raw string error");
   });
+
+  it("strips absolute file paths from error messages", () => {
+    const err = Object.assign(new Error("cmd failed"), {
+      stderr: "execution error: /Users/john/Library/Scripts/foo.scpt: error -1",
+    });
+    mockExecFileSync.mockImplementation(() => {
+      throw err;
+    });
+
+    expect(() => listGroups()).toThrow("<path>");
+    try {
+      listGroups();
+    } catch (e: unknown) {
+      expect((e as Error).message).not.toContain("/Users/john");
+    }
+  });
 });

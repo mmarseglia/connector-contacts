@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { sanitizeErrorMessage } from "./utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,12 +18,12 @@ function runAppleScript(script: string): string {
     });
     return result.trim();
   } catch (error: unknown) {
-    const msg =
+    const raw =
       error instanceof Error
         ? (error as NodeJS.ErrnoException & { stderr?: string }).stderr ||
           error.message
         : String(error);
-    throw new Error(`AppleScript error: ${msg}`);
+    throw new Error(`AppleScript error: ${sanitizeErrorMessage(raw)}`);
   }
 }
 

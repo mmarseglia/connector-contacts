@@ -14,22 +14,21 @@ import { toolError } from "./utils.js";
 const mockExecFileSync = vi.mocked(execFileSync);
 
 // ---------------------------------------------------------------------------
-// Error sanitization — system scripting errors are passed through to the
-// client without sanitization.  These tests document the current behaviour
-// and flag where system paths leak through error messages.
+// Error sanitization — system scripting errors have absolute file-system
+// paths stripped before being returned to MCP clients.
 //
-// Security concern:  AppleScript (osascript) stderr and native-module
-// load failures can embed absolute file-system paths such as
-//   /Users/jane/Library/…  or  /usr/local/lib/node_modules/…
-// These are forwarded verbatim to MCP clients via toolError().
+// The sanitizeErrorMessage() helper in utils.ts replaces multi-segment
+// absolute paths (e.g. /Users/jane/Library/…) with the placeholder <path>.
+// This is applied in both runAppleScript() and toolError() for defence
+// in depth.
 // ---------------------------------------------------------------------------
 
-describe("error sanitization — system paths leak through to client", () => {
+describe("error sanitization — system paths are stripped before reaching client", () => {
   // -----------------------------------------------------------------------
-  // 1. AppleScript stderr containing system paths is exposed verbatim
+  // 1. AppleScript stderr containing system paths is sanitised
   // -----------------------------------------------------------------------
   describe("AppleScript errors with system paths", () => {
-    it("passes osascript stderr containing /Users paths through to the client", () => {
+    it("strips /Users paths from osascript stderr before reaching the client", () => {
       const stderrWithPath =
         "/Users/jane/Library/Application Scripts/com.apple.Contacts: execution error: (-1708)";
       const err = Object.assign(new Error("command failed"), {
@@ -39,23 +38,23 @@ describe("error sanitization — system paths leak through to client", () => {
         throw err;
       });
 
-      // The error propagates with the full system path intact
-      expect(() => listGroups()).toThrow(stderrWithPath);
+      // The thrown error should NOT contain the original path
+      expect(() => listGroups()).toThrow("<path>");
 
-      // Wrapping through toolError also preserves the path
+      // Wrapping through toolError also strips the path
       try {
         listGroups();
       } catch (e) {
         const result = toolError(e);
         const parsed = JSON.parse(result.content[0].text);
 
-        // Current behaviour: system path is present in the client-facing error
-        expect(parsed.error).toContain("/Users/jane/Library");
+        expect(parsed.error).not.toContain("/Users/jane/Library");
+        expect(parsed.error).toContain("<path>");
         expect(result.isError).toBe(true);
       }
     });
 
-    it("passes osascript stderr containing /var/folders temp paths through to the client", () => {
+    it("strips /var/folders temp paths from osascript stderr", () => {
       const stderrWithTempPath =
         "/var/folders/xx/abc123/T/osascript.12345: syntax error (-2741)";
       const err = Object.assign(new Error("command failed"), {
@@ -71,12 +70,12 @@ describe("error sanitization — system paths leak through to client", () => {
         const result = toolError(e);
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(parsed.error).toContain("/var/folders/");
-        expect(parsed.error).toContain("osascript");
+        expect(parsed.error).not.toContain("/var/folders/");
+        expect(parsed.error).toContain("<path>");
       }
     });
 
-    it("passes osascript stderr containing /usr/local paths through to the client", () => {
+    it("strips /usr/local paths from osascript stderr", () => {
       const stderrWithUsrPath =
         "/usr/local/bin/osascript: can't open script file: /tmp/bad-script.scpt";
       const err = Object.assign(new Error("command failed"), {
@@ -92,70 +91,74 @@ describe("error sanitization — system paths leak through to client", () => {
         const result = toolError(e);
         const parsed = JSON.parse(result.content[0].text);
 
-        expect(parsed.error).toContain("/usr/local/bin/osascript");
-        expect(parsed.error).toContain("/tmp/bad-script.scpt");
+        expect(parsed.error).not.toContain("/usr/local/bin/osascript");
+        expect(parsed.error).toContain("<path>");
       }
     });
   });
 
   // -----------------------------------------------------------------------
-  // 2. toolError() performs no sanitization on any error string
+  // 2. toolError() sanitises all multi-segment path patterns
   // -----------------------------------------------------------------------
-  describe("toolError passes through all path patterns unsanitised", () => {
+  describe("toolError strips multi-segment path patterns", () => {
     const pathPatterns = [
       { label: "home directory", path: "/Users/mike/.config/contacts/db.sqlite" },
       { label: "system library", path: "/System/Library/Frameworks/Contacts.framework/Resources" },
       { label: "node_modules", path: "/opt/homebrew/lib/node_modules/node-mac-contacts/build/Release/contacts.node" },
       { label: "tmp directory", path: "/private/var/folders/zz/abc123/T/com.apple.Contacts" },
-      { label: "Windows-style path (WSL)", path: "C:\\Users\\mike\\AppData\\Local\\Contacts" },
     ];
 
     for (const { label, path } of pathPatterns) {
-      it(`does not filter ${label} paths: ${path}`, () => {
+      it(`strips ${label} paths: ${path}`, () => {
         const error = new Error(`Operation failed: ${path}: permission denied`);
         const result = toolError(error);
         const parsed = JSON.parse(result.content[0].text);
 
-        // The path appears in the client-facing error message verbatim
-        expect(parsed.error).toContain(path);
+        expect(parsed.error).not.toContain(path);
+        expect(parsed.error).toContain("<path>");
       });
     }
+
+    it("does not alter Windows-style paths (not applicable on macOS)", () => {
+      const error = new Error("Operation failed: C:\\Users\\mike\\AppData\\Local\\Contacts: error");
+      const result = toolError(error);
+      const parsed = JSON.parse(result.content[0].text);
+
+      // Windows paths don't start with / so they're not matched
+      expect(parsed.error).toContain("C:\\Users\\mike");
+    });
   });
 
   // -----------------------------------------------------------------------
-  // 3. Native module load failure can expose file-system layout
+  // 3. Native module load failure paths are sanitised
   // -----------------------------------------------------------------------
   describe("native module load errors", () => {
-    it("toolError preserves full stack trace with file paths when given an Error", () => {
+    it("strips file paths from native module error messages", () => {
       const nativeError = new Error(
         "Cannot find module '/usr/local/lib/node_modules/node-mac-contacts/build/Release/contacts.node'"
       );
-      // Real Node errors include a stack with absolute paths
-      nativeError.stack =
-        `Error: Cannot find module '/usr/local/lib/node_modules/node-mac-contacts/build/Release/contacts.node'\n` +
-        `    at Module._resolveFilename (/usr/local/lib/node_modules/node/lib/internal/modules/cjs/loader.js:636:15)`;
 
       const result = toolError(nativeError);
       const parsed = JSON.parse(result.content[0].text);
 
-      // toolError uses error.message (not stack), but the message itself contains the path
-      expect(parsed.error).toContain("/usr/local/lib/node_modules/node-mac-contacts");
+      expect(parsed.error).not.toContain("/usr/local/lib/node_modules");
+      expect(parsed.error).toContain("<path>");
     });
   });
 
   // -----------------------------------------------------------------------
-  // 4. Demonstrate that error.message is used as-is (no redaction)
+  // 4. Usernames embedded in paths are redacted along with the path
   // -----------------------------------------------------------------------
-  describe("toolError does not redact sensitive patterns", () => {
-    it("preserves username from path in error message", () => {
+  describe("toolError redacts sensitive patterns in paths", () => {
+    it("redacts username embedded in path", () => {
       const result = toolError(new Error("EACCES: /Users/jane.doe/.contacts/store.db"));
       const parsed = JSON.parse(result.content[0].text);
 
-      // A username ("jane.doe") is embedded in the path and reaches the client
-      expect(parsed.error).toContain("jane.doe");
+      expect(parsed.error).not.toContain("jane.doe");
+      expect(parsed.error).toContain("<path>");
     });
 
-    it("preserves hostname/IP if present in error message", () => {
+    it("preserves hostname/IP if present in error message (not a path)", () => {
       const result = toolError(
         new Error("ECONNREFUSED 192.168.1.42:5432 - connection to contacts DB failed")
       );
