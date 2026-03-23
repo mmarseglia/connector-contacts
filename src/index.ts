@@ -83,7 +83,7 @@ server.tool(
 
 server.tool(
   "get_contact_details",
-  "Get full details for a specific contact by their identifier. Returns extended properties including job title, organization, notes, social profiles, and more.",
+  "Get full details for a specific contact by their identifier. Returns extended properties including job title, organization, notes, social profiles, and more. May read multiple contacts internally to locate the requested record.",
   { identifier: z.string().min(1).describe("Contact identifier (from search_contacts or get_all_contacts results)") },
   { readOnlyHint: true },
   async ({ identifier }) => {
