@@ -241,7 +241,7 @@ server.tool(
 
 server.tool(
   "list_groups",
-  "List all contact groups in the macOS address book.",
+  "List all contact groups in the macOS address book. Uses AppleScript (osascript) to query the Contacts app.",
   {},
   { readOnlyHint: true },
   async () => {
@@ -256,7 +256,7 @@ server.tool(
 
 server.tool(
   "create_group",
-  "Create a new contact group in the address book.",
+  "Create a new contact group in the address book. Uses AppleScript (osascript) to modify the Contacts app.",
   { name: z.string().min(1).max(500).describe("Name for the new group") },
   { readOnlyHint: false },
   async ({ name }) => {
@@ -271,7 +271,7 @@ server.tool(
 
 server.tool(
   "delete_group",
-  "Delete a contact group. The contacts in the group are NOT deleted — only the group itself is removed.",
+  "Delete a contact group. The contacts in the group are NOT deleted — only the group itself is removed. Uses AppleScript (osascript) to modify the Contacts app.",
   { name: z.string().min(1).max(500).describe("Name of the group to delete") },
   { readOnlyHint: false, destructiveHint: true },
   async ({ name }) => {
@@ -286,7 +286,7 @@ server.tool(
 
 server.tool(
   "get_group_members",
-  "List all contacts that belong to a specific group.",
+  "List all contacts that belong to a specific group. Uses AppleScript (osascript) to query the Contacts app.",
   { groupName: z.string().min(1).max(500).describe("Name of the group") },
   { readOnlyHint: true },
   async ({ groupName }) => {
@@ -301,7 +301,7 @@ server.tool(
 
 server.tool(
   "add_contact_to_group",
-  "Add an existing contact to a group. The contact must exist in the address book.",
+  "Add an existing contact to a group. The contact must exist in the address book. Uses AppleScript (osascript) to modify the Contacts app.",
   {
     contactName: z.string().min(1).max(500).describe("Full name of the contact (e.g. \"John Doe\")"),
     groupName: z.string().min(1).max(500).describe("Name of the group to add the contact to"),
@@ -319,7 +319,7 @@ server.tool(
 
 server.tool(
   "remove_contact_from_group",
-  "Remove a contact from a group. The contact is NOT deleted — only the group membership is removed.",
+  "Remove a contact from a group. The contact is NOT deleted — only the group membership is removed. Uses AppleScript (osascript) to modify the Contacts app.",
   {
     contactName: z.string().min(1).max(500).describe("Full name of the contact"),
     groupName: z.string().min(1).max(500).describe("Name of the group to remove the contact from"),
@@ -341,7 +341,7 @@ server.tool(
 
 server.tool(
   "export_contact_vcard",
-  "Export a contact as a vCard (VCF) string. The vCard can be saved to a .vcf file or shared.",
+  "Export a contact as a vCard (VCF) string. The vCard can be saved to a .vcf file or shared. Uses AppleScript (osascript) to query the Contacts app.",
   { contactName: z.string().min(1).max(500).describe("Full name of the contact to export") },
   { readOnlyHint: true },
   async ({ contactName }) => {

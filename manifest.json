@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "connector-contacts",
   "display_name": "macOS Contacts",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Full read/write access to macOS Contacts — search, create, update, delete contacts, manage groups, and export vCards",
   "author": {
     "name": "mmarseglia",
@@ -25,13 +25,13 @@
     { "name": "create_contact", "description": "Create a new contact" },
     { "name": "update_contact", "description": "Update an existing contact" },
     { "name": "delete_contact", "description": "Permanently delete a contact" },
-    { "name": "list_groups", "description": "List all contact groups" },
-    { "name": "create_group", "description": "Create a new group" },
-    { "name": "delete_group", "description": "Delete a group (contacts preserved)" },
-    { "name": "get_group_members", "description": "List contacts in a group" },
-    { "name": "add_contact_to_group", "description": "Add a contact to a group" },
-    { "name": "remove_contact_from_group", "description": "Remove a contact from a group" },
-    { "name": "export_contact_vcard", "description": "Export a contact as vCard" }
+    { "name": "list_groups", "description": "List all contact groups (via AppleScript/osascript)" },
+    { "name": "create_group", "description": "Create a new group (via AppleScript/osascript)" },
+    { "name": "delete_group", "description": "Delete a group (contacts preserved, via AppleScript/osascript)" },
+    { "name": "get_group_members", "description": "List contacts in a group (via AppleScript/osascript)" },
+    { "name": "add_contact_to_group", "description": "Add a contact to a group (via AppleScript/osascript)" },
+    { "name": "remove_contact_from_group", "description": "Remove a contact from a group (via AppleScript/osascript)" },
+    { "name": "export_contact_vcard", "description": "Export a contact as vCard (via AppleScript/osascript)" }
   ],
   "compatibility": {
     "platforms": ["darwin"]

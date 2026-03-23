@@ -28,3 +28,6 @@ npm-debug.log*
 
 # Test output
 coverage/
+
+# Builds
+connector-contacts-*.mcpb
