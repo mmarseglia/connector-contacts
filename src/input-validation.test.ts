@@ -33,7 +33,7 @@ const currentCreateSchema = z.object({
   departmentName: z.string().max(500).optional(),
   organizationName: z.string().max(500).optional(),
   birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }).optional(),
-  phoneNumbers: z.array(z.string().min(1).regex(/^\+\d{2,}$/)).optional(),
+  phoneNumbers: z.array(z.string().min(3).regex(/^\+?[\d\s\-().]+$/)).optional(),
   emailAddresses: z.array(z.string().min(1).regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)).optional(),
   urlAddresses: z.array(z.string().min(1).regex(/^https?:\/\/\S+$/)).optional(),
 });
@@ -48,7 +48,7 @@ const currentUpdateSchema = z.object({
   departmentName: z.string().max(500).optional(),
   organizationName: z.string().max(500).optional(),
   birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }).optional(),
-  phoneNumbers: z.array(z.string().min(1).regex(/^\+\d{2,}$/)).optional(),
+  phoneNumbers: z.array(z.string().min(3).regex(/^\+?[\d\s\-().]+$/)).optional(),
   emailAddresses: z.array(z.string().min(1).regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)).optional(),
   urlAddresses: z.array(z.string().min(1).regex(/^https?:\/\/\S+$/)).optional(),
 });
@@ -60,10 +60,9 @@ const currentUpdateSchema = z.object({
 // =========================================================================
 
 describe("input validation — phone numbers", () => {
-  const validPhones = ["+14155551234", "+442071234567", "+61412345678"];
+  const validPhones = ["+14155551234", "+442071234567", "+61412345678", "14155551234", "(415) 555-1234", "+1-415-555-1234", "415.555.1234"];
   const malformedPhones = [
     { label: "plain text", value: "call me maybe" },
-    { label: "missing + prefix", value: "14155551234" },
     { label: "letters mixed in", value: "+1-800-FLOWERS" },
     { label: "too short", value: "+1" },
     { label: "special characters", value: "☎️ 555-1234" },
