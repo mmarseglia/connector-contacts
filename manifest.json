@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "connector-contacts",
   "display_name": "macOS Contacts",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Full read/write access to macOS Contacts — search, create, update, delete contacts, manage groups, and export vCards (via AppleScript/osascript)",
   "author": {
     "name": "mmarseglia",
