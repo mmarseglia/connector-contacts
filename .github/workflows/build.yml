@@ -3,9 +3,26 @@ name: Build MCPB Bundle
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
+    branches: [main]
 
 jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+      - run: npm test
+
   build:
+    needs: test
+    if: github.event_name == 'push'
     runs-on: macos-latest
     permissions:
       contents: write
@@ -17,21 +34,60 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify tag matches package.json version
+        if: github.ref_type == 'tag'
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
       - run: npm ci
-      - run: npm test
       - run: npm install -g @anthropic-ai/mcpb
       - run: npm run pack
 
+      - name: Rename artifact
+        id: artifact
+        run: |
+          SRC=$(ls connector-contacts-*.mcpb)
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            DEST="connector-contacts-${{ github.ref_name }}.mcpb"
+          else
+            DEST="connector-contacts-latest.mcpb"
+          fi
+          mv "$SRC" "$DEST"
+          echo "filename=$DEST" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.filename }}
+          path: ${{ steps.artifact.outputs.filename }}
+
       - name: Move latest tag
+        if: github.ref_type != 'tag'
         run: |
           git tag -f latest
           git push origin latest --force
 
-      - uses: softprops/action-gh-release@v2
+      - name: Latest release
+        if: github.ref_type != 'tag'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Build
           body: Built from ${{ github.sha }}
-          files: connector-contacts-*.mcpb
+          files: ${{ steps.artifact.outputs.filename }}
           prerelease: true
           make_latest: false
+
+      - name: Semver release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.artifact.outputs.filename }}
+          make_latest: true
