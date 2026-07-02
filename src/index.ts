@@ -10,7 +10,8 @@ import { z } from "zod";
 
 import * as native from "./contacts-native.js";
 import * as applescript from "./contacts-applescript.js";
-import { toolResult, toolError } from "./utils.js";
+import { createContactFields, updateContactFields } from "./schemas.js";
+import { toolHandler } from "./utils.js";
 
 const server = new McpServer({
   name: "connector-contacts",
@@ -26,25 +27,21 @@ server.tool(
   "Check if the server has permission to access macOS Contacts. Returns the current authorization status.",
   {},
   { readOnlyHint: true },
-  async () => {
-    try {
-      let status = await native.getAuthStatus();
-      let hint = "";
-      if (status === "Not Determined") {
-        status = await native.requestAccess();
-        hint = status === "Authorized"
-          ? "Permission was just granted. Contacts are now accessible."
-          : `Permission prompt was shown but access was not granted (status: ${status}). Please enable Contacts access in System Settings > Privacy & Security > Contacts.`;
-      } else if (status === "Denied" || status === "Restricted") {
-        hint = "Permission was denied. The user needs to enable Contacts access in System Settings > Privacy & Security > Contacts.";
-      } else if (status === "Limited") {
-        hint = "Limited access granted (macOS 15+). Only contacts the user explicitly selected are visible. Grant full access in System Settings > Privacy & Security > Contacts.";
-      }
-      return toolResult({ status, hint });
-    } catch (err) {
-      return toolError(err);
+  toolHandler(async () => {
+    let status = await native.getAuthStatus();
+    let hint = "";
+    if (status === "Not Determined") {
+      status = await native.requestAccess();
+      hint = status === "Authorized"
+        ? "Permission was just granted. Contacts are now accessible."
+        : `Permission prompt was shown but access was not granted (status: ${status}). Please enable Contacts access in System Settings > Privacy & Security > Contacts.`;
+    } else if (status === "Denied" || status === "Restricted") {
+      hint = "Permission was denied. The user needs to enable Contacts access in System Settings > Privacy & Security > Contacts.";
+    } else if (status === "Limited") {
+      hint = "Limited access granted (macOS 15+). Only contacts the user explicitly selected are visible. Grant full access in System Settings > Privacy & Security > Contacts.";
     }
-  },
+    return { status, hint };
+  }),
 );
 
 // ===========================================================================
@@ -56,14 +53,10 @@ server.tool(
   "Search for contacts by name. Matches across first name, last name, and full name. Returns basic contact info including identifiers for use with other tools.",
   { query: z.string().min(1).describe("Name to search for (first, last, or full name)") },
   { readOnlyHint: true },
-  async ({ query }) => {
-    try {
-      const results = await native.searchContacts(query);
-      return toolResult({ count: results.length, contacts: results });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(async ({ query }: { query: string }) => {
+    const results = await native.searchContacts(query);
+    return { count: results.length, contacts: results };
+  }),
 );
 
 server.tool(
@@ -71,14 +64,10 @@ server.tool(
   "Get all contacts from the address book. Returns basic info (name, phone, email) for every contact. For large address books, prefer search_contacts for targeted lookups.",
   {},
   { readOnlyHint: true },
-  async () => {
-    try {
-      const results = await native.getAllContacts();
-      return toolResult({ count: results.length, contacts: results });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(async () => {
+    const results = await native.getAllContacts();
+    return { count: results.length, contacts: results };
+  }),
 );
 
 server.tool(
@@ -86,135 +75,53 @@ server.tool(
   "Get full details for a specific contact by their identifier. Returns extended properties including job title, organization, notes, social profiles, and more. May read multiple contacts internally to locate the requested record.",
   { identifier: z.string().min(1).describe("Contact identifier (from search_contacts or get_all_contacts results)") },
   { readOnlyHint: true },
-  async ({ identifier }) => {
-    try {
-      const contact = await native.getContactDetails(identifier);
-      if (!contact) {
-        return toolResult({ error: "Contact not found", identifier });
-      }
-      return toolResult(contact);
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(async ({ identifier }: { identifier: string }) => {
+    const contact = await native.getContactDetails(identifier);
+    return contact ?? { error: "Contact not found", identifier };
+  }),
 );
 
 server.tool(
   "create_contact",
   "Create a new contact in the macOS address book. Only firstName is required; all other fields are optional.",
-  {
-    firstName: z.string().min(1).max(500).describe("First name (required)"),
-    lastName: z.string().max(500).optional().describe("Last name"),
-    nickname: z.string().max(500).optional().describe("Nickname"),
-    middleName: z.string().max(500).optional().describe("Middle name"),
-    jobTitle: z.string().max(500).optional().describe("Job title"),
-    departmentName: z.string().max(500).optional().describe("Department name"),
-    organizationName: z.string().max(500).optional().describe("Organization / company name"),
-    birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Birthday must be a valid date in YYYY-MM-DD format, e.g. 1990-05-15").refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }, { message: "Birthday date does not exist on the calendar (e.g. February 30 is not valid)" }).optional().describe("Birthday in YYYY-MM-DD format"),
-    phoneNumbers: z.array(z.string().min(3, "Phone number is too short").regex(/^\+?[\d\s\-().]+$/, "Phone number must contain only digits, spaces, hyphens, dots, or parentheses (with optional + prefix), e.g. +14155551234 or (415) 555-1234")).optional().describe("Phone numbers (e.g. +14155551234 or (415) 555-1234)"),
-    emailAddresses: z.array(z.string().min(1, "Email address cannot be empty").regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Email address must be in user@domain format, e.g. alice@example.com")).optional().describe("Email addresses"),
-    urlAddresses: z.array(z.string().min(1, "URL cannot be empty").regex(/^https?:\/\/\S+$/, "URL must start with http:// or https://, e.g. https://example.com")).optional().describe("URLs (website, social profile, etc.)"),
-  },
+  createContactFields,
   { readOnlyHint: false },
-  async (input) => {
-    try {
-      const success = await native.createContact(input);
-      if (success) {
-        // Attempt to find the newly created contact to return its identifier
-        const matches = await native.searchContacts(input.firstName);
-        const newContact = matches.find(
-          (c) =>
-            c.firstName === input.firstName &&
-            (!input.lastName || c.lastName === input.lastName),
-        );
-        return toolResult({
-          success: true,
-          message: `Contact "${input.firstName}${input.lastName ? " " + input.lastName : ""}" created`,
-          identifier: newContact?.identifier ?? null,
-        });
-      }
-      return toolResult({ success: false, message: "Failed to create contact" });
-    } catch (err) {
-      return toolError(err);
+  toolHandler(async (input: z.objectOutputType<typeof createContactFields, z.ZodTypeAny>) => {
+    const success = await native.createContact(input);
+    if (!success) {
+      return { success: false, message: "Failed to create contact" };
     }
-  },
+    // Attempt to find the newly created contact to return its identifier
+    const matches = await native.searchContacts(input.firstName);
+    const newContact = matches.find(
+      (c) =>
+        c.firstName === input.firstName &&
+        (!input.lastName || c.lastName === input.lastName),
+    );
+    return {
+      success: true,
+      message: `Contact "${input.firstName}${input.lastName ? " " + input.lastName : ""}" created`,
+      identifier: newContact?.identifier ?? null,
+    };
+  }),
 );
 
 server.tool(
   "update_contact",
   "Update an existing contact. Provide the contact's identifier and only the fields you want to change — other fields are left untouched.",
-  {
-    identifier: z.string().min(1).describe("Contact identifier to update"),
-    firstName: z.string().min(1).max(500).optional().describe("New first name"),
-    lastName: z.string().max(500).optional().describe("New last name"),
-    nickname: z.string().max(500).optional().describe("New nickname"),
-    middleName: z.string().max(500).optional().describe("New middle name"),
-    jobTitle: z.string().max(500).optional().describe("New job title"),
-    departmentName: z.string().max(500).optional().describe("New department name"),
-    organizationName: z.string().max(500).optional().describe("New organization / company name"),
-    birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Birthday must be a valid date in YYYY-MM-DD format, e.g. 1990-05-15").refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }, { message: "Birthday date does not exist on the calendar (e.g. February 30 is not valid)" }).optional().describe("New birthday in YYYY-MM-DD format"),
-    phoneNumbers: z.array(z.string().min(3, "Phone number is too short").regex(/^\+?[\d\s\-().]+$/, "Phone number must contain only digits, spaces, hyphens, dots, or parentheses (with optional + prefix), e.g. +14155551234 or (415) 555-1234")).optional().describe("Replace phone numbers"),
-    emailAddresses: z.array(z.string().min(1, "Email address cannot be empty").regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Email address must be in user@domain format, e.g. alice@example.com")).optional().describe("Replace email addresses"),
-    urlAddresses: z.array(z.string().min(1, "URL cannot be empty").regex(/^https?:\/\/\S+$/, "URL must start with http:// or https://, e.g. https://example.com")).optional().describe("Replace URLs"),
-  },
+  updateContactFields,
   { readOnlyHint: false },
-  async ({ identifier, ...fields }) => {
-    try {
-      // Fetch current contact to preserve fields not being updated
-      const current = await native.getContactDetails(identifier);
-      if (!current) {
-        return toolResult({ success: false, error: "Contact not found", identifier });
-      }
-
-      // Build the payload dynamically, only including fields that have
-      // actual values.  The native module's validateContactArg() checks
-      // hasOwnProperty — including a key set to undefined or an empty
-      // birthday string triggers validation errors for fields that
-      // aren't being changed.  By omitting them we avoid the cascade.
-      const updatePayload: Record<string, unknown> & { identifier: string } = { identifier };
-
-      // Scalar string fields: include if user provided OR current has a value
-      for (const key of [
-        "firstName", "lastName", "nickname", "middleName",
-        "jobTitle", "departmentName", "organizationName",
-      ] as const) {
-        const value = fields[key] ?? (current as unknown as Record<string, unknown>)[key];
-        if (value) updatePayload[key] = value;
-      }
-
-      // Birthday: only include if the resolved value is a non-empty string
-      const birthday = fields.birthday ?? current.birthday;
-      if (birthday) updatePayload.birthday = birthday;
-
-      // Array fields: include only if the caller explicitly provided them
-      // (to replace) or the current contact already has entries (to preserve).
-      if (fields.phoneNumbers) {
-        updatePayload.phoneNumbers = fields.phoneNumbers;
-      } else if (current.phoneNumbers?.length) {
-        updatePayload.phoneNumbers = current.phoneNumbers;
-      }
-
-      if (fields.emailAddresses) {
-        updatePayload.emailAddresses = fields.emailAddresses;
-      } else if (current.emailAddresses?.length) {
-        updatePayload.emailAddresses = current.emailAddresses;
-      }
-
-      if (fields.urlAddresses) {
-        updatePayload.urlAddresses = fields.urlAddresses;
-      } else if (current.urlAddresses?.length) {
-        updatePayload.urlAddresses = current.urlAddresses;
-      }
-
-      const success = await native.updateContact(updatePayload);
-      return toolResult({
-        success,
-        message: success ? "Contact updated" : "Failed to update contact",
-      });
-    } catch (err) {
-      return toolError(err);
+  toolHandler(async ({ identifier, ...fields }: z.objectOutputType<typeof updateContactFields, z.ZodTypeAny>) => {
+    // Fetch current contact to preserve fields not being updated
+    const current = await native.getContactDetails(identifier);
+    if (!current) {
+      return { success: false, error: "Contact not found", identifier };
     }
-  },
+    const success = await native.updateContact(
+      native.mergeContactUpdate(identifier, fields, current),
+    );
+    return { success, message: success ? "Contact updated" : "Failed to update contact" };
+  }),
 );
 
 server.tool(
@@ -222,17 +129,10 @@ server.tool(
   "Permanently delete a contact from the macOS address book. This cannot be undone.",
   { identifier: z.string().min(1).describe("Contact identifier to delete") },
   { readOnlyHint: false, destructiveHint: true },
-  async ({ identifier }) => {
-    try {
-      const success = await native.deleteContact(identifier);
-      return toolResult({
-        success,
-        message: success ? "Contact deleted" : "Failed to delete contact",
-      });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(async ({ identifier }: { identifier: string }) => {
+    const success = await native.deleteContact(identifier);
+    return { success, message: success ? "Contact deleted" : "Failed to delete contact" };
+  }),
 );
 
 // ===========================================================================
@@ -244,14 +144,10 @@ server.tool(
   "List all contact groups in the macOS address book. Uses AppleScript (osascript) to query the Contacts app.",
   {},
   { readOnlyHint: true },
-  async () => {
-    try {
-      const groups = applescript.listGroups();
-      return toolResult({ count: groups.length, groups });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(() => {
+    const groups = applescript.listGroups();
+    return { count: groups.length, groups };
+  }),
 );
 
 server.tool(
@@ -259,14 +155,7 @@ server.tool(
   "Create a new contact group in the address book. Uses AppleScript (osascript) to modify the Contacts app.",
   { name: z.string().min(1).max(500).describe("Name for the new group") },
   { readOnlyHint: false },
-  async ({ name }) => {
-    try {
-      const result = applescript.createGroup(name);
-      return toolResult(result);
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ name }: { name: string }) => applescript.createGroup(name)),
 );
 
 server.tool(
@@ -274,14 +163,7 @@ server.tool(
   "Delete a contact group. The contacts in the group are NOT deleted — only the group itself is removed. Uses AppleScript (osascript) to modify the Contacts app.",
   { name: z.string().min(1).max(500).describe("Name of the group to delete") },
   { readOnlyHint: false, destructiveHint: true },
-  async ({ name }) => {
-    try {
-      const result = applescript.deleteGroup(name);
-      return toolResult(result);
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ name }: { name: string }) => applescript.deleteGroup(name)),
 );
 
 server.tool(
@@ -289,14 +171,10 @@ server.tool(
   "List all contacts that belong to a specific group. Uses AppleScript (osascript) to query the Contacts app.",
   { groupName: z.string().min(1).max(500).describe("Name of the group") },
   { readOnlyHint: true },
-  async ({ groupName }) => {
-    try {
-      const members = applescript.getGroupMembers(groupName);
-      return toolResult({ group: groupName, count: members.length, members });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ groupName }: { groupName: string }) => {
+    const members = applescript.getGroupMembers(groupName);
+    return { group: groupName, count: members.length, members };
+  }),
 );
 
 server.tool(
@@ -307,14 +185,9 @@ server.tool(
     groupName: z.string().min(1).max(500).describe("Name of the group to add the contact to"),
   },
   { readOnlyHint: false },
-  async ({ contactName, groupName }) => {
-    try {
-      const result = applescript.addContactToGroup(contactName, groupName);
-      return toolResult(result);
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ contactName, groupName }: { contactName: string; groupName: string }) =>
+    applescript.addContactToGroup(contactName, groupName),
+  ),
 );
 
 server.tool(
@@ -325,14 +198,9 @@ server.tool(
     groupName: z.string().min(1).max(500).describe("Name of the group to remove the contact from"),
   },
   { readOnlyHint: false },
-  async ({ contactName, groupName }) => {
-    try {
-      const result = applescript.removeContactFromGroup(contactName, groupName);
-      return toolResult(result);
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ contactName, groupName }: { contactName: string; groupName: string }) =>
+    applescript.removeContactFromGroup(contactName, groupName),
+  ),
 );
 
 // ===========================================================================
@@ -344,14 +212,10 @@ server.tool(
   "Export a contact as a vCard (VCF) string. The vCard can be saved to a .vcf file or shared. Uses AppleScript (osascript) to query the Contacts app.",
   { contactName: z.string().min(1).max(500).describe("Full name of the contact to export") },
   { readOnlyHint: true },
-  async ({ contactName }) => {
-    try {
-      const vcard = applescript.exportContactVCard(contactName);
-      return toolResult({ contactName, vcard });
-    } catch (err) {
-      return toolError(err);
-    }
-  },
+  toolHandler(({ contactName }: { contactName: string }) => {
+    const vcard = applescript.exportContactVCard(contactName);
+    return { contactName, vcard };
+  }),
 );
 
 // ===========================================================================

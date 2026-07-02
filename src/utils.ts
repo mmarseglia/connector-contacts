@@ -28,3 +28,18 @@ export function toolError(error: unknown) {
     isError: true,
   };
 }
+
+/**
+ * Wrap a tool implementation with the shared result envelope: whatever the
+ * implementation returns becomes toolResult(...), and anything it throws
+ * becomes toolError(...).
+ */
+export function toolHandler<Args>(fn: (args: Args) => unknown) {
+  return async (args: Args) => {
+    try {
+      return toolResult(await fn(args));
+    } catch (err) {
+      return toolError(err);
+    }
+  };
+}
