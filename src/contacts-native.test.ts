@@ -16,7 +16,7 @@ vi.mock("node-mac-contacts", () => {
 });
 
 import contacts from "node-mac-contacts";
-import type { ContactBasic, ContactFull } from "./types.js";
+import type { ContactBasic, ContactFull, ContactInput } from "./types.js";
 import {
   getAuthStatus,
   requestAccess,
@@ -27,6 +27,7 @@ import {
   createContact,
   updateContact,
   deleteContact,
+  mergeContactUpdate,
 } from "./contacts-native.js";
 
 // ---------------------------------------------------------------------------
@@ -550,53 +551,27 @@ describe("Bug 2: updateContact is blocked by getContactDetails failure", () => {
 /**
  * Integration-style tests that exercise the MCP handler logic in index.ts.
  *
- * The update_contact handler (index.ts lines 161–218) calls
- * native.getContactDetails() to fetch the current contact before building
- * the update payload. This means Bug 1 cascades into Bug 2.
+ * The update_contact handler calls native.getContactDetails() to fetch the
+ * current contact before building the update payload with
+ * mergeContactUpdate(). This means Bug 1 cascades into Bug 2.
  *
  * These tests mock at the native module level and call the same functions
  * that the MCP handler uses, to verify the cascade.
  */
 describe("Bug 2: update_contact handler cascade from getContactDetails", () => {
   /**
-   * Simulates what the MCP update_contact handler does:
-   * 1. Calls getContactDetails to fetch current contact
-   * 2. Merges fields
-   * 3. Calls updateContact
-   *
-   * This mirrors index.ts lines 161–218.
+   * Mirrors the MCP update_contact handler in index.ts:
+   * fetch current contact → mergeContactUpdate → updateContact.
    */
   async function simulateUpdateHandler(
     identifier: string,
-    fields: Record<string, unknown>,
+    fields: Partial<ContactInput>,
   ): Promise<{ success: boolean; error?: string }> {
-    // Step 1: fetch current contact (same as index.ts line 164)
     const current = await getContactDetails(identifier);
     if (!current) {
       return { success: false, error: "Contact not found" };
     }
-
-    // Step 2: build payload (simplified version of index.ts lines 174–207)
-    const updatePayload: Record<string, unknown> & { identifier: string } = { identifier };
-    for (const key of [
-      "firstName", "lastName", "nickname", "middleName",
-      "jobTitle", "departmentName", "organizationName",
-    ]) {
-      const value = fields[key] ?? (current as unknown as Record<string, unknown>)[key];
-      if (value) updatePayload[key] = value;
-    }
-    const birthday = (fields.birthday ?? current.birthday) as string | undefined;
-    if (birthday) updatePayload.birthday = birthday;
-    for (const key of ["phoneNumbers", "emailAddresses", "urlAddresses"]) {
-      if (fields[key]) {
-        updatePayload[key] = fields[key];
-      } else if ((current as unknown as Record<string, unknown[]>)[key]?.length) {
-        updatePayload[key] = (current as unknown as Record<string, unknown[]>)[key];
-      }
-    }
-
-    // Step 3: call native update
-    const success = await updateContact(updatePayload as Record<string, unknown> & { identifier: string });
+    const success = await updateContact(mergeContactUpdate(identifier, fields, current));
     return { success, error: success ? undefined : "Failed to update contact" };
   }
 

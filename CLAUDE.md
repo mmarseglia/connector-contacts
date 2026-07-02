@@ -31,7 +31,7 @@ The server uses a **hybrid backend** — two parallel paths to macOS Contacts:
 - **`src/contacts-native.ts`** — wraps the `node-mac-contacts` native addon. Handles contact CRUD and authorization. Every operation calls `ensureAccess()` first, which handles the macOS TCC permission flow (Not Determined → prompt, Denied → throw with instructions).
 - **`src/contacts-applescript.ts`** — runs AppleScript via `osascript` for operations the native module doesn't support: group management and vCard export. These functions are **synchronous** (`execFileSync`).
 
-**`src/index.ts`** is the single place where all 14 MCP tools are registered (Zod schemas, descriptions, `readOnlyHint`/`destructiveHint` annotations). Every tool handler follows the same pattern: try/catch wrapping a backend call, returning `toolResult(data)` or `toolError(err)` from `src/utils.ts`.
+**`src/index.ts`** is the single place where all 14 MCP tools are registered (Zod schemas, descriptions, `readOnlyHint`/`destructiveHint` annotations). Every tool handler is wrapped in `toolHandler()` from `src/utils.ts`, which returns `toolResult(data)` for whatever the handler returns and `toolError(err)` for anything it throws. The Zod field schemas shared by `create_contact`/`update_contact` live in `src/schemas.ts` and are also imported by the input-validation tests.
 
 ### Load-order and error-handling invariants
 
@@ -47,7 +47,7 @@ These are deliberate and easy to break — preserve them:
 
 - `searchContacts` falls back to a manual case-insensitive scan of all contacts when the native name-predicate search returns nothing (Unicode/tokenization quirks in Apple's API).
 - `getContactDetails` has no "get by id" native API to use; it resolves identifier → name → targeted search, falling back to a full scan.
-- `update_contact` in `index.ts` merges the caller's fields with the current contact and **omits** empty/undefined keys — the native module's validation rejects payloads containing keys with empty values, so don't "simplify" this into a plain spread.
+- `update_contact` merges the caller's fields with the current contact via `mergeContactUpdate()` in `contacts-native.ts`, which **omits** empty/undefined keys — the native module's validation rejects payloads containing keys with empty values, so don't "simplify" this into a plain spread.
 
 ## Testing conventions
 

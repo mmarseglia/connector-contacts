@@ -1,63 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
+import { createContactFields, updateContactFields } from "./schemas.js";
+
 // ---------------------------------------------------------------------------
-// Input validation — Phone numbers, email addresses, URLs, and birthdays
-// are accepted as free-form strings with no format validation.
-//
-// These tests extract the Zod schemas used by the create_contact and
-// update_contact tools and verify that malformed values are rejected
-// before they reach the native macOS Contacts API.
-//
-// Currently all tests FAIL because the schemas use plain z.string()
-// with no format constraints.  Adding validation (e.g. z.string().email(),
-// z.string().regex() for E.164 phones, z.string().url()) would make
-// them pass.
+// Input validation — verifies that malformed phone numbers, email addresses,
+// URLs, and birthdays are rejected by the create_contact / update_contact
+// schemas before they reach the native macOS Contacts API.
 // ---------------------------------------------------------------------------
 
-// =========================================================================
-// Schema definitions — mirrors the Zod shapes from index.ts so we can
-// test them in isolation without starting the MCP server.
-// =========================================================================
-
-/**
- * Current schema (from index.ts lines 106–117) — no format validation.
- * These are the ACTUAL schemas the server uses today.
- */
-const currentCreateSchema = z.object({
-  firstName: z.string().min(1).max(500),
-  lastName: z.string().max(500).optional(),
-  nickname: z.string().max(500).optional(),
-  middleName: z.string().max(500).optional(),
-  jobTitle: z.string().max(500).optional(),
-  departmentName: z.string().max(500).optional(),
-  organizationName: z.string().max(500).optional(),
-  birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }).optional(),
-  phoneNumbers: z.array(z.string().min(3).regex(/^\+?[\d\s\-().]+$/)).optional(),
-  emailAddresses: z.array(z.string().min(1).regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)).optional(),
-  urlAddresses: z.array(z.string().min(1).regex(/^https?:\/\/\S+$/)).optional(),
-});
-
-const currentUpdateSchema = z.object({
-  identifier: z.string().min(1),
-  firstName: z.string().min(1).max(500).optional(),
-  lastName: z.string().max(500).optional(),
-  nickname: z.string().max(500).optional(),
-  middleName: z.string().max(500).optional(),
-  jobTitle: z.string().max(500).optional(),
-  departmentName: z.string().max(500).optional(),
-  organizationName: z.string().max(500).optional(),
-  birthday: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/).refine((v) => { try { const d = new Date(v + "T00:00:00"); return d.toISOString().startsWith(v); } catch { return false; } }).optional(),
-  phoneNumbers: z.array(z.string().min(3).regex(/^\+?[\d\s\-().]+$/)).optional(),
-  emailAddresses: z.array(z.string().min(1).regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)).optional(),
-  urlAddresses: z.array(z.string().min(1).regex(/^https?:\/\/\S+$/)).optional(),
-});
-
-// =========================================================================
-// Tests — each test asserts that malformed input is REJECTED.
-// They will FAIL against the current schemas because there is no
-// format validation.
-// =========================================================================
+const currentCreateSchema = z.object(createContactFields);
+const currentUpdateSchema = z.object(updateContactFields);
 
 describe("input validation — phone numbers", () => {
   const validPhones = ["+14155551234", "+442071234567", "+61412345678", "14155551234", "(415) 555-1234", "+1-415-555-1234", "415.555.1234"];
