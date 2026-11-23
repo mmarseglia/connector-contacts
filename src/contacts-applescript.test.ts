@@ -14,6 +14,7 @@ import {
   addContactToGroup,
   removeContactFromGroup,
   exportContactVCard,
+  updateContact,
 } from "./contacts-applescript.js";
 
 const mockExecFileSync = vi.mocked(execFileSync);
@@ -229,5 +230,68 @@ describe("runAppleScript error handling", () => {
     } catch (e: unknown) {
       expect((e as Error).message).not.toContain("/Users/john");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateContact
+// ---------------------------------------------------------------------------
+
+describe("updateContact", () => {
+  /** The script passed to osascript on the last call. */
+  const lastScript = () => mockExecFileSync.mock.calls.at(-1)![1]![1] as string;
+
+  it("addresses the person by id and sets only the given fields", () => {
+    mockExecFileSync.mockReturnValue("updated");
+
+    expect(updateContact("ABC:ABPerson", { nickname: "Ali", lastName: "" })).toEqual({
+      success: true,
+      message: "Contact updated",
+    });
+    const script = lastScript();
+    expect(script).toContain('set p to person id "ABC:ABPerson"');
+    expect(script).toContain('set nickname of p to "Ali"');
+    expect(script).toContain('set last name of p to ""'); // empty string clears the field
+    expect(script).not.toContain("first name");
+    expect(script).not.toContain("phone");
+  });
+
+  it("builds the birthday from numbers, day reset first", () => {
+    mockExecFileSync.mockReturnValue("updated");
+
+    updateContact("id", { birthday: "1990-02-28" });
+    const script = lastScript();
+    expect(script.indexOf("set day of bd to 1")).toBeLessThan(script.indexOf("set month of bd to 2"));
+    expect(script).toContain("set year of bd to 1990");
+    expect(script).toContain("set day of bd to 28");
+  });
+
+  it("replaces phones and emails", () => {
+    mockExecFileSync.mockReturnValue("updated");
+
+    updateContact("id", { phoneNumbers: ["+1 415"], emailAddresses: ["a@b.co"] });
+    const script = lastScript();
+    expect(script).toContain("delete every phone of p");
+    expect(script).toContain('value:"+1 415"');
+    expect(script).toContain("delete every email of p");
+    expect(script).toContain('value:"a@b.co"');
+  });
+
+  it("escapes quotes in values and the identifier", () => {
+    mockExecFileSync.mockReturnValue("updated");
+
+    updateContact('x" & do shell script "id', { nickname: 'a"b' });
+    const script = lastScript();
+    expect(script).toContain('person id "x\\" & do shell script \\"id"');
+    expect(script).toContain('set nickname of p to "a\\"b"');
+  });
+
+  it("reports not found", () => {
+    mockExecFileSync.mockReturnValue("not_found");
+
+    expect(updateContact("missing", { nickname: "x" })).toEqual({
+      success: false,
+      message: "Contact not found",
+    });
   });
 });

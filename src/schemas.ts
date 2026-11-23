@@ -19,7 +19,7 @@ const birthday = z
   .refine(
     (v) => {
       try {
-        return new Date(v + "T00:00:00").toISOString().startsWith(v);
+        return new Date(v + "T00:00:00Z").toISOString().startsWith(v);
       } catch {
         return false;
       }
@@ -40,11 +40,6 @@ const emailAddress = z
   .min(1, "Email address cannot be empty")
   .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Email address must be in user@domain format, e.g. alice@example.com");
 
-const urlAddress = z
-  .string()
-  .min(1, "URL cannot be empty")
-  .regex(/^https?:\/\/\S+$/, "URL must start with http:// or https://, e.g. https://example.com");
-
 /** Optional contact fields accepted by both create_contact and update_contact. */
 const contactFields = {
   lastName: name.optional().describe("Last name"),
@@ -62,10 +57,6 @@ const contactFields = {
     .array(emailAddress)
     .optional()
     .describe("Email addresses. On update, replaces all existing email addresses."),
-  urlAddresses: z
-    .array(urlAddress)
-    .optional()
-    .describe("URLs (website, social profile, etc.). On update, replaces all existing URLs."),
 };
 
 export const createContactFields = {

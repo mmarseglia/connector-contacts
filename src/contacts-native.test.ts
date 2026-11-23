@@ -9,7 +9,6 @@ vi.mock("node-mac-contacts", () => {
     getAllContacts: vi.fn(),
     getContactsByName: vi.fn(),
     addNewContact: vi.fn(),
-    updateContact: vi.fn(),
     deleteContact: vi.fn(),
   };
   return { default: mod, ...mod };
@@ -25,9 +24,7 @@ import {
   searchContacts,
   getContactDetails,
   createContact,
-  updateContact,
   deleteContact,
-  mergeContactUpdate,
 } from "./contacts-native.js";
 
 // ---------------------------------------------------------------------------
@@ -63,7 +60,6 @@ const CONTACT_ALICE_FULL: ContactFull = {
   organizationName: "Acme Corp",
   middleName: "Marie",
   note: "VIP contact",
-  urlAddresses: ["https://alice.dev"],
   socialProfiles: [{ label: "Twitter", value: "@alice" }],
   instantMessageAddresses: [],
 };
@@ -350,55 +346,25 @@ describe("getContactDetails", () => {
 });
 
 describe("createContact", () => {
-  it("passes the input to addNewContact and returns the result", async () => {
+  it("returns the id that was not there before, not an older namesake", async () => {
+    const OLD = { ...CONTACT_ALICE, identifier: "id-old" };
+    const NEW = { ...CONTACT_ALICE, identifier: "id-new" };
+    vi.mocked(contacts.getContactsByName)
+      .mockReturnValueOnce([OLD])
+      .mockReturnValueOnce([OLD, NEW]);
     vi.mocked(contacts.addNewContact).mockReturnValue(true);
 
     const input = { firstName: "Alice", lastName: "Smith" };
-    expect(await createContact(input)).toBe(true);
+    expect(await createContact(input)).toEqual({ success: true, identifier: "id-new" });
     expect(contacts.addNewContact).toHaveBeenCalledWith(input);
   });
-});
 
-describe("updateContact", () => {
-  it("passes the input with identifier to updateContact", async () => {
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
+  it("returns success false when the native add fails", async () => {
+    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([]);
+    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([]);
+    vi.mocked(contacts.addNewContact).mockReturnValue(false);
 
-    const input = { identifier: "id-1", firstName: "Alice" };
-    expect(await updateContact(input)).toBe(true);
-    expect(contacts.updateContact).toHaveBeenCalledWith(input);
-  });
-
-  it("returns false when the native module returns false", async () => {
-    vi.mocked(contacts.updateContact).mockReturnValue(false);
-
-    const input = { identifier: "id-1", firstName: "Alice" };
-    expect(await updateContact(input)).toBe(false);
-  });
-});
-
-describe("getContactDetails includes urlAddresses", () => {
-  it("returns urlAddresses when present in the full contact", async () => {
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
-      CONTACT_ALICE_FULL,
-    ]);
-
-    const result = await getContactDetails("id-alice-001");
-
-    expect(result).not.toBeNull();
-    expect(result!.urlAddresses).toEqual(["https://alice.dev"]);
-  });
-
-  it("does not request urlAddresses as an extra property", async () => {
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([
-      CONTACT_ALICE_FULL,
-    ]);
-
-    await getContactDetails("id-alice-001");
-
-    const passedExtras = vi.mocked(contacts.getContactsByName).mock.calls[0][1] as string[];
-    expect(passedExtras).not.toContain("urlAddresses");
+    expect(await createContact({ firstName: "Zed" })).toEqual({ success: false, identifier: null });
   });
 });
 
@@ -508,149 +474,5 @@ describe("Bug 1: getContactDetails only passes valid extra properties", () => {
     // Bug is fixed: urlAddresses is no longer in ALL_EXTRA_PROPERTIES,
     // so the native module no longer throws.
     await expect(getContactDetails("id-alice-001")).resolves.not.toThrow();
-  });
-});
-
-// ===========================================================================
-// Bug 2 — update_contact: the MCP handler calls getContactDetails() before
-// performing the update.  Because getContactDetails() is broken (Bug 1),
-// update_contact always fails before it even attempts to save.
-//
-// Additionally, even when getContactDetails was working (retest #2), the
-// update still didn't persist — the native updateContact() was called but
-// changes were not saved.
-// ===========================================================================
-
-describe("Bug 2: updateContact is blocked by getContactDetails failure", () => {
-  it("updateContact itself works when called directly with valid input", async () => {
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    const input = { identifier: "id-alice-001", nickname: "Ali" };
-    const result = await updateContact(input);
-
-    expect(result).toBe(true);
-    expect(contacts.updateContact).toHaveBeenCalledWith(input);
-  });
-
-  it("updateContact passes all provided fields to native module", async () => {
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    const input = {
-      identifier: "id-alice-001",
-      nickname: "Ali",
-      emailAddresses: ["newalice@example.com"],
-      jobTitle: "Senior Engineer",
-    };
-    const result = await updateContact(input);
-
-    expect(result).toBe(true);
-    expect(contacts.updateContact).toHaveBeenCalledWith(input);
-  });
-});
-
-/**
- * Integration-style tests that exercise the MCP handler logic in index.ts.
- *
- * The update_contact handler calls native.getContactDetails() to fetch the
- * current contact before building the update payload with
- * mergeContactUpdate(). This means Bug 1 cascades into Bug 2.
- *
- * These tests mock at the native module level and call the same functions
- * that the MCP handler uses, to verify the cascade.
- */
-describe("Bug 2: update_contact handler cascade from getContactDetails", () => {
-  /**
-   * Mirrors the MCP update_contact handler in index.ts:
-   * fetch current contact → mergeContactUpdate → updateContact.
-   */
-  async function simulateUpdateHandler(
-    identifier: string,
-    fields: Partial<ContactInput>,
-  ): Promise<{ success: boolean; error?: string }> {
-    const current = await getContactDetails(identifier);
-    if (!current) {
-      return { success: false, error: "Contact not found" };
-    }
-    const success = await updateContact(mergeContactUpdate(identifier, fields, current));
-    return { success, error: success ? undefined : "Failed to update contact" };
-  }
-
-  it("update fails because getContactDetails throws (extraProperties bug cascade)", async () => {
-    // Simulate the native module rejecting "urlAddresses" in extra properties
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockImplementationOnce(
-      (_name: string, extraProperties?: string[]) => {
-        if (extraProperties?.includes("urlAddresses")) {
-          throw new Error(
-            "properties in extraProperties must be one of jobTitle, departmentName, " +
-            "organizationName, middleName, note, contactImage, contactThumbnailImage, " +
-            "instantMessageAddresses, socialProfiles",
-          );
-        }
-        return [CONTACT_ALICE_FULL];
-      },
-    );
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    // Bug is fixed: urlAddresses is no longer in ALL_EXTRA_PROPERTIES,
-    // so getContactDetails succeeds and the update proceeds.
-    const result = await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
-    expect(result.success).toBe(true);
-    expect(contacts.updateContact).toHaveBeenCalledTimes(1);
-  });
-
-  it("update succeeds when getContactDetails works (expected behavior after fix)", async () => {
-    // Simulate a fixed version where getContactDetails returns normally
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    const result = await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
-
-    expect(result.success).toBe(true);
-    expect(contacts.updateContact).toHaveBeenCalledTimes(1);
-
-    // Verify the payload includes the new nickname AND preserves existing fields
-    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.identifier).toBe("id-alice-001");
-    expect(payload.nickname).toBe("Ali");
-    expect(payload.firstName).toBe("Alice");
-    expect(payload.jobTitle).toBe("Engineer");
-  });
-
-  it("update preserves existing email addresses when only nickname is changed", async () => {
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
-
-    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.emailAddresses).toEqual(["alice@example.com"]);
-  });
-
-  it("update replaces email addresses when explicitly provided", async () => {
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([CONTACT_ALICE]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([CONTACT_ALICE_FULL]);
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    await simulateUpdateHandler("id-alice-001", {
-      emailAddresses: ["newalice@example.com"],
-    });
-
-    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.emailAddresses).toEqual(["newalice@example.com"]);
-  });
-
-  it("update omits empty birthday to avoid native validation error", async () => {
-    const aliceNoBirthday: ContactFull = { ...CONTACT_ALICE_FULL, birthday: "" };
-    vi.mocked(contacts.getAllContacts).mockReturnValueOnce([{ ...CONTACT_ALICE, birthday: "" }]);
-    vi.mocked(contacts.getContactsByName).mockReturnValueOnce([aliceNoBirthday]);
-    vi.mocked(contacts.updateContact).mockReturnValue(true);
-
-    await simulateUpdateHandler("id-alice-001", { nickname: "Ali" });
-
-    const payload = vi.mocked(contacts.updateContact).mock.calls[0][0] as Record<string, unknown>;
-    expect(payload).not.toHaveProperty("birthday");
   });
 });

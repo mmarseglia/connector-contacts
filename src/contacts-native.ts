@@ -191,53 +191,21 @@ export async function getContactDetails(identifier: string): Promise<ContactFull
 // Write
 // ---------------------------------------------------------------------------
 
-export async function createContact(input: ContactInput): Promise<boolean> {
+/**
+ * addNewContact only returns a boolean, so the new identifier is found by
+ * searching the name before and after: the one id that was not there before.
+ */
+export async function createContact(
+  input: ContactInput,
+): Promise<{ success: boolean; identifier: string | null }> {
+  const before = new Set((await searchContacts(input.firstName)).map((c) => c.identifier));
   const contacts = await nativeWithAccess();
-  return contacts.addNewContact(input);
-}
-
-export async function updateContact(
-  input: Record<string, unknown> & { identifier: string },
-): Promise<boolean> {
-  const contacts = await nativeWithAccess();
-  return contacts.updateContact(input as unknown as Parameters<typeof contacts.updateContact>[0]);
+  if (!contacts.addNewContact(input)) return { success: false, identifier: null };
+  const added = (await searchContacts(input.firstName)).find((c) => !before.has(c.identifier));
+  return { success: true, identifier: added?.identifier ?? null };
 }
 
 export async function deleteContact(identifier: string): Promise<boolean> {
   const contacts = await nativeWithAccess();
   return contacts.deleteContact({ identifier });
-}
-
-/**
- * Merge caller-supplied fields over the current contact to build an update
- * payload for the native module.
- *
- * The native module's validateContactArg() checks hasOwnProperty, so a key
- * whose value is undefined or an empty string fails validation even when the
- * caller isn't changing that field — unset fields must be omitted from the
- * payload entirely, not passed through as empty values.
- */
-export function mergeContactUpdate(
-  identifier: string,
-  fields: Partial<ContactInput>,
-  current: ContactFull,
-): Record<string, unknown> & { identifier: string } {
-  const payload: Record<string, unknown> & { identifier: string } = { identifier };
-
-  for (const key of [
-    "firstName", "lastName", "nickname", "middleName",
-    "jobTitle", "departmentName", "organizationName", "birthday",
-  ] as const) {
-    const value = fields[key] ?? current[key];
-    if (value) payload[key] = value;
-  }
-
-  // Arrays provided by the caller replace the existing values wholesale
-  // (even when empty); otherwise non-empty current values are carried over.
-  for (const key of ["phoneNumbers", "emailAddresses", "urlAddresses"] as const) {
-    const value = fields[key] ?? (current[key]?.length ? current[key] : undefined);
-    if (value) payload[key] = value;
-  }
-
-  return payload;
 }

@@ -87,21 +87,14 @@ server.tool(
   createContactFields,
   { readOnlyHint: false },
   toolHandler(async (input: z.objectOutputType<typeof createContactFields, z.ZodTypeAny>) => {
-    const success = await native.createContact(input);
+    const { success, identifier } = await native.createContact(input);
     if (!success) {
       return { success: false, message: "Failed to create contact" };
     }
-    // Attempt to find the newly created contact to return its identifier
-    const matches = await native.searchContacts(input.firstName);
-    const newContact = matches.find(
-      (c) =>
-        c.firstName === input.firstName &&
-        (!input.lastName || c.lastName === input.lastName),
-    );
     return {
       success: true,
       message: `Contact "${input.firstName}${input.lastName ? " " + input.lastName : ""}" created`,
-      identifier: newContact?.identifier ?? null,
+      identifier,
     };
   }),
 );
@@ -112,15 +105,7 @@ server.tool(
   updateContactFields,
   { readOnlyHint: false },
   toolHandler(async ({ identifier, ...fields }: z.objectOutputType<typeof updateContactFields, z.ZodTypeAny>) => {
-    // Fetch current contact to preserve fields not being updated
-    const current = await native.getContactDetails(identifier);
-    if (!current) {
-      return { success: false, error: "Contact not found", identifier };
-    }
-    const success = await native.updateContact(
-      native.mergeContactUpdate(identifier, fields, current),
-    );
-    return { success, message: success ? "Contact updated" : "Failed to update contact" };
+    return applescript.updateContact(identifier, fields);
   }),
 );
 

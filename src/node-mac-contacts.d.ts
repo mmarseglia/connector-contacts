@@ -13,7 +13,6 @@ declare module "node-mac-contacts" {
     organizationName?: string;
     middleName?: string;
     note?: string;
-    urlAddresses?: string[];
     socialProfiles?: Array<{ label: string; value: string }>;
     instantMessageAddresses?: Array<{ label: string; value: string }>;
     contactImage?: Buffer;
@@ -31,7 +30,6 @@ declare module "node-mac-contacts" {
     birthday?: string;
     phoneNumbers?: string[];
     emailAddresses?: string[];
-    urlAddresses?: string[];
     identifier?: string;
   }
 
@@ -45,7 +43,6 @@ declare module "node-mac-contacts" {
   function getAllContacts(extraProperties?: string[]): Contact[];
   function getContactsByName(name: string, extraProperties?: string[]): Contact[];
   function addNewContact(contact: ContactInput): boolean;
-  function updateContact(contact: ContactInput): boolean;
   function deleteContact(input: DeleteInput): boolean;
 
   const listener: {
@@ -60,7 +57,6 @@ declare module "node-mac-contacts" {
     getAllContacts,
     getContactsByName,
     addNewContact,
-    updateContact,
     deleteContact,
     listener,
   };

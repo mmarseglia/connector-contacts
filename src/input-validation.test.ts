@@ -81,40 +81,6 @@ describe("input validation — email addresses", () => {
   }
 });
 
-describe("input validation — URL addresses", () => {
-  const validUrls = ["https://example.com", "http://alice.dev/portfolio"];
-  const malformedUrls = [
-    { label: "no protocol", value: "example.com" },
-    { label: "plain text", value: "my website is cool" },
-    { label: "just a protocol", value: "https://" },
-    { label: "spaces in URL", value: "https://my site.com/page" },
-    { label: "empty string", value: "" },
-    { label: "javascript protocol", value: "javascript:alert(1)" },
-  ];
-
-  it("accepts valid URLs", () => {
-    const result = currentCreateSchema.safeParse({
-      firstName: "Test",
-      urlAddresses: validUrls,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  for (const { label, value } of malformedUrls) {
-    it(`rejects malformed URL (${label}): "${value}"`, () => {
-      const result = currentCreateSchema.safeParse({
-        firstName: "Test",
-        urlAddresses: [value],
-      });
-      expect(
-        result.success,
-        `URL "${value}" should be rejected but was accepted — ` +
-        `no format validation on urlAddresses field`,
-      ).toBe(false);
-    });
-  }
-});
-
 describe("input validation — birthday format", () => {
   const validBirthdays = ["1990-05-15", "2000-01-01", "1965-12-31"];
   const malformedBirthdays = [
@@ -173,17 +139,6 @@ describe("input validation — update_contact has the same gaps", () => {
     expect(
       result.success,
       `update_contact should validate emailAddresses format`,
-    ).toBe(false);
-  });
-
-  it("rejects malformed URL on update", () => {
-    const result = currentUpdateSchema.safeParse({
-      identifier: "id-123",
-      urlAddresses: ["not a url"],
-    });
-    expect(
-      result.success,
-      `update_contact should validate urlAddresses format`,
     ).toBe(false);
   });
 

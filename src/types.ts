@@ -25,7 +25,6 @@ export interface ContactFull extends ContactBasic {
   organizationName: string;
   middleName: string;
   note: string;
-  urlAddresses: string[];
   socialProfiles: Array<{ label: string; value: string }>;
   instantMessageAddresses: Array<{ label: string; value: string }>;
 }
@@ -44,5 +43,4 @@ export interface ContactInput {
   birthday?: string;
   phoneNumbers?: string[];
   emailAddresses?: string[];
-  urlAddresses?: string[];
 }

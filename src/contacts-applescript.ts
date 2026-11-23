@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { sanitizeErrorMessage } from "./utils.js";
+import type { ContactInput } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,6 +154,73 @@ end tell`;
     success: true,
     message: `Removed "${contactName}" from group "${groupName}"`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Contact update
+// ---------------------------------------------------------------------------
+
+// node-mac-contacts' updateContact ignores the identifier and always fails,
+// so updates go through AppleScript, which can address a person by id.
+const TEXT_PROPS = {
+  firstName: "first name",
+  lastName: "last name",
+  middleName: "middle name",
+  nickname: "nickname",
+  jobTitle: "job title",
+  departmentName: "department",
+  organizationName: "organization",
+} as const;
+
+/** Only the fields that are present are changed; phones/emails replace all existing ones. */
+export function updateContact(
+  identifier: string,
+  fields: Partial<ContactInput>,
+): { success: boolean; message: string } {
+  const lines: string[] = [];
+  for (const [key, prop] of Object.entries(TEXT_PROPS)) {
+    const value = fields[key as keyof typeof TEXT_PROPS];
+    if (value !== undefined) lines.push(`set ${prop} of p to "${escapeAS(value)}"`);
+  }
+  if (fields.birthday !== undefined) {
+    const [y, m, d] = fields.birthday.split("-").map(Number);
+    // Day goes to 1 first so changing month/year never overflows (e.g. Jan 31 -> Feb).
+    lines.push(
+      "set bd to current date",
+      "set day of bd to 1",
+      `set year of bd to ${y}`,
+      `set month of bd to ${m}`,
+      `set day of bd to ${d}`,
+      "set time of bd to 0",
+      "set birth date of p to bd",
+    );
+  }
+  if (fields.phoneNumbers) {
+    lines.push("delete every phone of p");
+    for (const n of fields.phoneNumbers) {
+      lines.push(`make new phone at end of phones of p with properties {label:"mobile", value:"${escapeAS(n)}"}`);
+    }
+  }
+  if (fields.emailAddresses) {
+    lines.push("delete every email of p");
+    for (const e of fields.emailAddresses) {
+      lines.push(`make new email at end of emails of p with properties {label:"home", value:"${escapeAS(e)}"}`);
+    }
+  }
+
+  const id = escapeAS(identifier);
+  const script = `
+tell application "Contacts"
+  if not (exists person id "${id}") then return "not_found"
+  set p to person id "${id}"
+  ${lines.join("\n  ")}
+  save
+  return "updated"
+end tell`;
+  if (runAppleScript(script) === "not_found") {
+    return { success: false, message: "Contact not found" };
+  }
+  return { success: true, message: "Contact updated" };
 }
 
 // ---------------------------------------------------------------------------
